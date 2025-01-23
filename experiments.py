@@ -6,6 +6,7 @@ from scipy.stats import spearmanr, kendalltau
 
 with open('Dataset.pkl', 'rb') as f: Dataset = cPickle.load(f)
 assets = list(Dataset.columns.values)
+pdb.set_trace()
 valid_data = np.array(Dataset).T
 valid_data = torch.from_numpy(valid_data).float()
 
@@ -40,43 +41,30 @@ def calculate_psr(rewards):
     psr_out[psr_out.isnan()] = 0.0
     return sharpe, psr_out  
 
-def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, decay_factor = 0.94) -> torch.Tensor:
-    # Shape variables
+def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, decay_factor = 0.925) -> torch.Tensor:
     n_assets, n_periods = log_returns.shape
 
-    # Compute mean, standard deviation, and residuals
     mean_return = log_returns.mean(dim=1)
-    std_dev = log_returns.std(dim=1) + 1e-8  # Avoid division by zero
+    std_dev = log_returns.std(dim=1).clamp_min(1e-8)
     residuals = log_returns - mean_return.unsqueeze(1)
 
-    # Compute higher-order statistics
-    residual_std = residuals.std(dim=1) + 1e-8
-    adjusted_std = std_dev * (1 + residual_std / std_dev)
-    skewness = residuals.pow(3).mean(dim=1) / adjusted_std.pow(3)
-    kurtosis = residuals.pow(4).mean(dim=1) / adjusted_std.pow(4) - 3
+    skewness = residuals.pow(3).mean(dim=1) / std_dev.pow(3)
+    kurtosis = residuals.pow(4).mean(dim=1) / std_dev.pow(4) - 3
 
-    # Tail-adjusted excess return
     excess_return = mean_return - risk_free_rate
-    tail_adjusted_excess_return = excess_return * (1 - (kurtosis - 3) / 24)
+    tail_adjusted_excess_return = excess_return * (1 - kurtosis / 48)
 
-    # Adjusted Sharpe ratio
-    adjusted_sharpe = tail_adjusted_excess_return / adjusted_std * (1 + skewness / 6)
+    entropy_term = -(log_returns * (log_returns.exp() + 1e-8)).mean(dim=1)
+    adjusted_sharpe = (tail_adjusted_excess_return / std_dev) * (1 + skewness / 6 + entropy_term / 10)
 
-    # Exponential decay weights
-    weights = (1 - decay_factor) * decay_factor ** torch.arange(
-        n_assets, dtype=log_returns.dtype, device=log_returns.device
-    )
+    weights = decay_factor ** torch.arange(n_assets, dtype=log_returns.dtype, device=log_returns.device)
+    weighted_adjusted_sharpe = torch.dot(weights, adjusted_sharpe) / weights.sum()
 
-    # Compute weighted adjusted Sharpe ratio
-    cumulative_weights = weights.cumsum(dim=0) + 1e-8
-    weighted_adjusted_sharpe = (weights * adjusted_sharpe).cumsum(dim=0) / cumulative_weights
-
-    # Out-of-sample adjustment factor
-    oos_adjustment = (1 + (kurtosis - 3) / 24).sqrt() * (1 - skewness / 12)
-
-    # Final scaling with the number of periods
-    scaling_factor = torch.sqrt(torch.tensor(n_periods, dtype=log_returns.dtype, device=log_returns.device))
-    return (weighted_adjusted_sharpe * scaling_factor) / adjusted_std * oos_adjustment
+    scaling_factor = torch.rsqrt(torch.tensor(n_periods, dtype=log_returns.dtype, device=log_returns.device))
+    exploratory_term = (1 + kurtosis.abs().sqrt().clamp_max(3.0) / 12) * (1 + skewness.abs().sqrt().clamp_max(3.0) / 12)
+    entropy_exploratory_scaling = entropy_term.abs().clamp_min(0.5).clamp_max(1.5)
+    
+    return (weighted_adjusted_sharpe * scaling_factor) / std_dev * exploratory_term * entropy_exploratory_scaling
 
 def ndcg(scores: torch.Tensor, labels: torch.Tensor, log_base: int = 2) -> torch.Tensor:
     """Compute normalized discounted cumulative gain (NDCG) without cutoffs.
@@ -127,7 +115,6 @@ def calculate_correlations(log_returns):
         score_first_half_np = score_first_half.numpy()
         
         # Calculate correlations
-        pearson_corr, _ = pearsonr(score_first_half_np, sharpe_test.numpy())
         spearman_corr, _ = spearmanr(score_first_half_np, sharpe_test.numpy())
         kendall_corr, _ = kendalltau(score_first_half_np, sharpe_test.numpy())
         ndcg_corr = ndcg(score_first_half, sharpe_test).item()
