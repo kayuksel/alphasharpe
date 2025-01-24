@@ -40,7 +40,7 @@ def calculate_psr(rewards):
     psr_out[psr_out.isnan()] = 0.0
     return sharpe, psr_out  
 
-'''
+"""
 def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
     mean_return = torch.exp(log_returns.mean(dim=-1))
     std_dev = torch.sqrt((log_returns.var(dim=-1) + 5e-3) * (log_returns.std(dim=-1) + 5e-3))
@@ -49,39 +49,52 @@ def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> tor
 
 def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, decay_factor=0.94) -> torch.Tensor:
     n_assets, n_periods = log_returns.shape
-
     mean_return = log_returns.mean(dim=1)
-    geom_mean_return = (log_returns.exp()).mean(dim=1).log()
+    excess_return = mean_return - risk_free_rate
     std_dev = log_returns.std(dim=1).clamp_min(1e-8)
+
     residuals = log_returns - mean_return.unsqueeze(1)
+    skewness = (residuals.pow(3).mean(dim=1) / std_dev.pow(3)).clamp(min=-1.0, max=1.0)
+    kurtosis = (residuals.pow(4).mean(dim=1) / std_dev.pow(4) - 3).clamp(min=-1.0, max=3.0)
 
-    skewness = residuals.pow(3).mean(dim=1) / std_dev.pow(3)
-    kurtosis = residuals.pow(4).mean(dim=1) / std_dev.pow(4) - 3
+    tail_adjusted_excess_return = excess_return * (1 - (kurtosis.abs() / 12))
+    adjusted_sharpe = tail_adjusted_excess_return / (std_dev * (1 + skewness / 6).clamp(min=1e-8))
 
-    excess_return = geom_mean_return - risk_free_rate
-    tail_adjusted_excess_return = excess_return * (1 - (kurtosis.abs() / 12).clamp(max=1.0))
-    
-    rolling_mean = log_returns.unfold(1, 20, 1).mean(dim=(2, 1))
-    trimmed_mean = log_returns.clone()
-    trimmed_mean = trimmed_mean - torch.quantile(trimmed_mean, 0.01, dim=1, keepdim=True)
-    trimmed_mean = trimmed_mean - torch.quantile(trimmed_mean, 0.99, dim=1, keepdim=True)
-
-    entropy_term = -(log_returns * (log_returns.exp() + 1e-8)).mean(dim=1)
-    
-    adjusted_sharpe = (tail_adjusted_excess_return / std_dev) * (1 + skewness / 6 + entropy_term / 10)
-    
     weights = (1 - decay_factor) * decay_factor ** torch.arange(n_assets, dtype=log_returns.dtype, device=log_returns.device)
-    cumulative_weights = weights.cumsum(dim=0) + 1e-8
-    weighted_adjusted_sharpe = (weights * adjusted_sharpe).cumsum(dim=0) / cumulative_weights
+    weighting_factor = weights / weights.sum()
+    weighted_adjusted_sharpe = (weighting_factor * adjusted_sharpe).sum()
 
-    oos_adjustment = (1 + (kurtosis.abs().clamp_max(3.0) - 3) / 12).sqrt()
-    scaling_factor = torch.rsqrt(torch.tensor(n_periods, dtype=log_returns.dtype, device=log_returns.device))
-    exploratory_term = (1 + skewness.abs().clamp_max(3.0) / 8) * (1 + kurtosis.abs().clamp_max(3.0) / 8)
+    scaling_factor = torch.rsqrt(torch.tensor(n_periods, dtype=log_returns.dtype, device=log_returns.device)) * (1 + skewness.abs() / 8)
+    penalty_factor = (std_dev / (std_dev + 1e-8)).clamp(max=1.0)
 
-    penalty_factor = torch.mean(torch.minimum(trimmed_mean, torch.tensor(0.0, device=log_returns.device)), dim=1) / (std_dev + 1e-8)
+    out_of_sample_adjustment = (1 + (kurtosis.abs().clamp(max=3.0) - 3) / 12).sqrt()
+    return (weighted_adjusted_sharpe * scaling_factor * out_of_sample_adjustment * (1 - penalty_factor)) / std_dev * (1 + (skewness.abs().clamp(max=3.0) / 8)) * (1 - torch.exp(-kurtosis.abs() / 4))
 
-    return (weighted_adjusted_sharpe * scaling_factor * oos_adjustment * (1 - penalty_factor)) / std_dev * exploratory_term * entropy_term.abs().clamp_min(0.5).clamp_max(1.5)
-'''
+def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
+    n_assets, n_periods = log_returns.shape
+    mean_return = log_returns.mean(dim=1)
+    excess_return = mean_return - risk_free_rate
+    std_dev = log_returns.std(dim=1, unbiased=False).clamp(min=1e-8)
+
+    residuals = log_returns - mean_return.unsqueeze(1)
+    skewness = (residuals.pow(3).mean(dim=1) / std_dev.pow(3)).clamp(min=-1.0, max=1.0)
+    kurtosis = (residuals.pow(4).mean(dim=1) / std_dev.pow(4)).clamp(max=6.0) - 3
+
+    tail_adjusted_excess_return = excess_return * (1 - (kurtosis.abs() / 12).clamp(max=1.0))
+    adjusted_sharpe = tail_adjusted_excess_return / (std_dev * (1 + skewness / 6).clamp(min=1e-8))
+
+    weights = torch.softmax(torch.arange(n_assets, dtype=log_returns.dtype, device=log_returns.device) / n_assets, dim=0)
+    weighted_adjusted_sharpe = (weights * adjusted_sharpe).sum()
+
+    out_of_sample_adjustment = (1 + (kurtosis.abs().clamp(max=3.0) - 3) / 12).sqrt()
+    penalty_factor = (std_dev / (std_dev + 1e-8)).clamp(max=1.0)
+    
+    scaling_factor = torch.rsqrt(torch.tensor(n_periods, dtype=log_returns.dtype, device=log_returns.device)) * (1 + skewness.abs() / 8)
+
+    adjustment_factor = (1 + (skewness.abs().clamp(max=3.0) / 8)) * (1 - torch.exp(-0.5 * kurtosis.abs() / 4))
+    
+    return (weighted_adjusted_sharpe * scaling_factor * out_of_sample_adjustment * (1 - penalty_factor)) * adjustment_factor * (1 + torch.log1p(std_dev + 1e-8) / 2) / std_dev
+"""
 
 def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, decay_factor = 0.94) -> torch.Tensor:
     # Shape variables
@@ -142,7 +155,7 @@ def ndcg(scores: torch.Tensor, labels: torch.Tensor, log_base: int = 2) -> torch
     # Compute NDCG
     return dcg / ideal_dcg
 
-# Create a function to calculate correlations
+# Assuming calculate_psr and robust_sharpe are defined elsewhere
 def calculate_correlations(log_returns):
     cutoff_index = log_returns.size(1) // 5
     train = log_returns[:, :cutoff_index]
@@ -160,9 +173,8 @@ def calculate_correlations(log_returns):
     results = []
     for metric_name, score_first_half in metrics.items():
         score_first_half_np = score_first_half.numpy()
-        
+
         # Calculate correlations
-        #pearson_corr, _ = pearsonr(score_first_half_np, sharpe_test.numpy())
         spearman_corr, _ = spearmanr(score_first_half_np, sharpe_test.numpy())
         kendall_corr, _ = kendalltau(score_first_half_np, sharpe_test.numpy())
         ndcg_corr = ndcg(score_first_half, sharpe_test).item()
@@ -177,6 +189,7 @@ def calculate_correlations(log_returns):
     # Create a DataFrame for the results
     results_df = pd.DataFrame(results)
     return results_df
+
 
 correlations_df = calculate_correlations(valid_data)
 print(correlations_df)
