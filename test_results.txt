@@ -22,23 +22,13 @@
         Metric  Spearman   Kendall  NDCG@25%
 0       Sharpe  0.130161  0.087012  0.392636
 1          PSR  0.127023  0.084970  0.388421
-2  AlphaSharpe  0.405560  0.276919  0.564632
-   Percentage  AlphaSharpe vs Sharpe (%)  AlphaSharpe vs PSR (%)
-0          10                  47.639940               52.386013
-1          15                  79.870141               81.956588
-2          20                  79.175016               81.236564
-3          25                  86.004726               93.699753
---- Results of AlphaSharpe Variant 4
-        Metric  Spearman   Kendall  NDCG@25%
-0       Sharpe  0.130161  0.087012  0.392636
-1          PSR  0.127023  0.084970  0.388421
 2  AlphaSharpe  0.408981  0.277576  0.589344
    Percentage  AlphaSharpe vs Sharpe (%)  AlphaSharpe vs PSR (%)
 0          10                  49.570383               54.378513
 1          15                  82.048667               84.160384
 2          20                  81.182230               83.266873
 3          25                  84.954594               92.606176
---- Results of AlphaSharpe Variant 5
+--- Results of AlphaSharpe Variant 4
         Metric  Spearman   Kendall  NDCG@25%
 0       Sharpe  0.130161  0.087012  0.392636
 1          PSR  0.127023  0.084970  0.388421
@@ -48,7 +38,7 @@
 1          15                  81.900282               84.010278
 2          20                  82.969531               85.074738
 3          25                  86.713341               94.437683
---- Results of AlphaSharpe Variant 6
+--- Results of AlphaSharpe Variant 5
         Metric  Spearman   Kendall  NDCG@25%
 0       Sharpe  0.130161  0.087012  0.392636
 1          PSR  0.127023  0.084970  0.388421
@@ -58,7 +48,7 @@
 1          15                  82.308885               84.423620
 2          20                  81.297192               83.383157
 3          25                  84.878123               92.526543
---- Results of AlphaSharpe Variant 7
+--- Results of AlphaSharpe Variant 6
         Metric  Spearman   Kendall  NDCG@25%
 0       Sharpe  0.130161  0.087012  0.392636
 1          PSR  0.127023  0.084970  0.388421
@@ -68,7 +58,7 @@
 1          15                  82.331157               84.446151
 2          20                  79.725059               81.792936
 3          25                  79.664176               87.096894
---- Results of AlphaSharpe Variant 8
+--- Results of AlphaSharpe Variant 7
         Metric  Spearman   Kendall  NDCG@25%
 0       Sharpe  0.130161  0.087012  0.392636
 1          PSR  0.127023  0.084970  0.388421
@@ -78,7 +68,7 @@
 1          15                  80.806180               82.903485
 2          20                  81.881696               83.974386
 3          25                  86.307284               94.014828
---- Results of AlphaSharpe Variant 9
+--- Results of AlphaSharpe Variant 8
         Metric  Spearman   Kendall  NDCG@25%
 0       Sharpe  0.130161  0.087012  0.392636
 1          PSR  0.127023  0.084970  0.388421
@@ -88,3 +78,33 @@
 1          15                  81.321803               83.425089
 2          20                  82.264026               84.361115
 3          25                  82.085789               89.618690
+--- Results of AlphaSharpe Variant 9
+        Metric  Spearman   Kendall  NDCG@25%
+0       Sharpe  0.130161  0.087012  0.392636
+1          PSR  0.127023  0.084970  0.388421
+2  AlphaSharpe  0.408591  0.277325  0.590561
+   Percentage  AlphaSharpe vs Sharpe (%)  AlphaSharpe vs PSR (%)
+0          10                  49.576904               54.385244
+1          15                  81.180315               83.281959
+2          20                  81.699694               83.790290
+3          25                  84.835328               92.481976
+--- Results of AlphaSharpe Variant 10
+        Metric  Spearman   Kendall  NDCG@25%
+0       Sharpe  0.130161  0.087012  0.392636
+1          PSR  0.127023  0.084970  0.388421
+2  AlphaSharpe  0.408606  0.277304  0.587131
+   Percentage  AlphaSharpe vs Sharpe (%)  AlphaSharpe vs PSR (%)
+0          10                  49.442269               54.246281
+1          15                  81.381897               83.485880
+2          20                  81.295035               83.380975
+3          25                  84.673619               92.313578
+--- Results of AlphaSharpe Variant 11
+        Metric  Spearman   Kendall  NDCG@25%
+0       Sharpe  0.130161  0.087012  0.392636
+1          PSR  0.127023  0.084970  0.388421
+2  AlphaSharpe  0.402115  0.272845  0.598279
+   Percentage  AlphaSharpe vs Sharpe (%)  AlphaSharpe vs PSR (%)
+0          10                  48.925365               53.712760
+1          15                  82.705413               84.824748
+2          20                  80.207476               82.280903
+3          25                  83.866261               91.472820
