@@ -233,6 +233,15 @@ def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> tor
 """,
 """
 def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
+    adjusted_returns = log_returns - risk_free_rate
+    excess_return = adjusted_returns.mean(dim=-1).exp()
+    adjusted_std_dev = (log_returns.std(dim=-1) ** 2 + 5e-3).sqrt()
+    downside_risk = (log_returns[log_returns < 0].std(dim=-1, unbiased=False) + (log_returns < 0).sum(dim=-1).float().clamp(min=1e-5).sqrt() * log_returns.std(dim=-1, unbiased=False)) / ((log_returns < 0).sum(dim=-1).float().clamp(min=1e-5) + 1e-5)
+    risk_adjusted_std_dev = adjusted_std_dev + downside_risk
+    return excess_return / risk_adjusted_std_dev
+""",
+"""
+def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
     n_assets, n_periods = log_returns.shape
     adjusted_rf_rate = risk_free_rate * (1 + log_returns.std(dim=1) / log_returns.mean(dim=1).clamp(min=1e-8))
     excess_return = log_returns.mean(dim=1) - adjusted_rf_rate
@@ -549,3 +558,78 @@ for i, variant in enumerate(variants):
     # Evaluate and print the results
     percentage_increases = evaluate_asset_selection_with_percentage_increase(valid_data)
     print(percentage_increases)
+
+
+from flaml import AutoML
+import matplotlib.pyplot as plt
+
+cutoff_index = valid_data.size(1) // 5
+
+# Step 1: Extract Features from Robust Sharpe Variants
+features = []
+for i, variant in enumerate(variants):  # Iterate through all variants
+    exec(variant, globals())  # Execute each variant definition
+    features.append(robust_sharpe(valid_data[:, :cutoff_index]).numpy())  # Extract features using the robust_sharpe function
+
+# Combine features into a DataFrame
+features_df = pd.DataFrame(features).T  # Shape: (n_assets, n_variants)
+features_df.columns = [f"Variant_{i+1}" for i in range(len(variants))]
+
+# Step 2: Calculate Sharpe Ratios for the Test Period
+test_data = valid_data[:, cutoff_index:]
+sharpe_test = calculate_psr(test_data.T)[0].numpy()  # Sharpe ratios for the test period
+
+# Step 3: Define Groups
+groups = np.arange(len(features_df))  # Each asset gets its unique group ID
+
+# Step 4: Train FLAML Model for Regression with Groups
+automl = AutoML()
+automl.fit(
+    X_train=features_df, 
+    y_train=sharpe_test,  # Use actual Sharpe ratios as targets
+    groups=groups,  # Use groups for grouped cross-validation
+    task="regression",  # Regression task
+    metric="mae",  # Optimize for R² score
+    eval_method="cv",  # Use cross-validation
+    time_budget=60,  # Time budget in seconds (5 minutes)
+    estimator_list=["xgboost"],  # Use LightGBM for regression
+    verbose=1,  # Verbose output
+)
+
+predicted_sharpe = automl.predict(features_df)
+
+spearman_corr, _ = spearmanr(predicted_sharpe, sharpe_test)
+kendall_corr, _ = kendalltau(predicted_sharpe, sharpe_test)
+
+print(f"Ensemble Spearman Correlation: {spearman_corr:.6f}")
+print(f"Ensemble Kendall Correlation: {kendall_corr:.6f}")
+
+# Calculate NDCG correlation
+ndcg_corr = ndcg(torch.tensor(predicted_sharpe, dtype=torch.float32), 
+    torch.tensor(sharpe_test, dtype=torch.float32)).item()
+
+print(f"Ensemble NDCG@25% Score: {ndcg_corr:.6f}")
+
+# Step 5: Extract Feature Importance
+feature_importances = automl.model.estimator.feature_importances_
+feature_importance_df = pd.DataFrame({
+    "Feature": features_df.columns,
+    "Importance": feature_importances
+})
+
+# Sort features by importance
+feature_importance_df = feature_importance_df.sort_values(by="Importance", ascending=False).reset_index(drop=True)
+
+# Print feature importances in a readable format
+print("Ensemble Variant Importances:")
+print(feature_importance_df.to_string(index=False, float_format="%.2f"))
+
+# Plot the ranked feature importances
+plt.figure(figsize=(12, 6))
+plt.bar(feature_importance_df["Feature"], feature_importance_df["Importance"], color="skyblue")
+plt.xlabel("Feature (Variant)", fontsize=12)
+plt.ylabel("Percentage Importance", fontsize=12)
+plt.title("Ensemble Variant Importances", fontsize=14)
+plt.xticks(rotation=45, ha="right", fontsize=10)
+plt.tight_layout()
+plt.show()
