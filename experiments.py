@@ -42,10 +42,9 @@ def calculate_psr(rewards):
 
 """
 def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
-    mean_return = torch.exp(log_returns.mean(dim=-1))
-    std_dev = torch.sqrt((log_returns.var(dim=-1) + 5e-3) * (log_returns.std(dim=-1) + 5e-3))
-    sharpe = (mean_return - risk_free_rate) / std_dev
-    return (1 + sharpe) ** 2
+    mean_return = log_returns.mean(dim=-1).exp()
+    std_dev = (log_returns.var(dim=-1) + 5e-3) * (log_returns.std(dim=-1) + 5e-3)
+    return (mean_return - risk_free_rate) / std_dev.sqrt()
 
 def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, decay_factor=0.94) -> torch.Tensor:
     n_assets, n_periods = log_returns.shape
