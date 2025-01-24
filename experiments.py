@@ -243,47 +243,6 @@ def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> tor
 """
 def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
     n_assets, n_periods = log_returns.shape
-    excess_return = log_returns.mean(dim=1) - risk_free_rate
-    std_dev = log_returns.std(dim=1, unbiased=False).clamp(min=1e-8)
-
-    residuals = log_returns - log_returns.mean(dim=1, keepdim=True)
-    skewness = (residuals.pow(3).mean(dim=1) / std_dev.pow(3)).clamp(min=-1.0, max=1.0)
-    kurtosis = (residuals.pow(4).mean(dim=1) / std_dev.pow(4)).clamp(max=6.0) - 3
-
-    tail_adjusted_excess_return = excess_return * (1 - (kurtosis.abs() / 12).clamp(max=1.0))
-
-    drawdown = (log_returns.cumsum(dim=1) - log_returns.cumsum(dim=1).max(dim=1, keepdim=True)[0]).min(dim=1)[0]
-    max_drawdown = drawdown.mean()
-    drawdown_penalty = (1 / (1 + max_drawdown.abs())).clamp(max=1.0)
-
-    entropy_measure = -torch.sum(torch.exp(log_returns) * log_returns, dim=1) / n_periods
-    entropy_penalty = entropy_measure.clamp(min=1e-8)
-
-    momentum = log_returns[:, -n_periods // 4:].mean(dim=1).clamp(min=1e-8)
-    volatility = log_returns[:, -n_periods // 4:].std(dim=1, unbiased=False).clamp(min=1e-8)
-    market_regime_factor = torch.where(momentum > 0, 1.1, 0.9)
-
-    adjusted_sharpe = (tail_adjusted_excess_return * (1 - drawdown_penalty) / 
-                       ((std_dev + volatility) * (1 + skewness / 6).clamp(min=1e-8))).clamp(min=0.0)
-
-    weights = torch.softmax(torch.arange(n_assets, dtype=log_returns.dtype, device=log_returns.device) / n_assets, dim=0)
-    weighted_adjusted_sharpe = (weights * adjusted_sharpe).sum()
-
-    ols_estimate = (log_returns[:, -n_periods // 4:].mean(dim=1) / (log_returns[:, -n_periods // 4:].std(dim=1) + 1e-8)).clamp(min=0.0)
-    
-    future_volatility = log_returns[:, -n_periods // 4:].std(dim=1, unbiased=False).clamp(min=1e-8)    
-    final_adjusted_metric = (weighted_adjusted_sharpe * (1 + ols_estimate) * market_regime_factor) / (entropy_penalty * future_volatility)
-
-    adjusted_for_high_order_moments = final_adjusted_metric * (1 + (skewness.pow(2) + kurtosis) / 8).clamp(min=1e-8)
-
-    temporal_decay_adjustment = (log_returns.mean(dim=1) / (std_dev + 1e-8)).clamp(min=1e-8)
-    adjusted_final_metric = adjusted_for_high_order_moments * (1 + temporal_decay_adjustment)
-
-    return adjusted_final_metric
-""",
-"""
-def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
-    n_assets, n_periods = log_returns.shape
     adjusted_rf_rate = risk_free_rate * (1 + log_returns.std(dim=1) / log_returns.mean(dim=1).clamp(min=1e-8))
     excess_return = log_returns.mean(dim=1) - adjusted_rf_rate
 
@@ -497,6 +456,131 @@ def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> tor
     final_metric *= regime_adjusted_penalty
 
     return final_metric
+""",
+"""
+def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
+    n_assets, n_periods = log_returns.shape
+    adjusted_rf_rate = risk_free_rate * (1 + log_returns.std(dim=1) / log_returns.mean(dim=1).clamp(min=1e-8))
+    excess_return = log_returns.mean(dim=1) - adjusted_rf_rate
+
+    rolling_std_dev = log_returns.unfold(1, n_periods // 4, 1).std(dim=2, unbiased=False).mean(dim=1).clamp(min=1e-8)
+
+    residuals = log_returns - log_returns.mean(dim=1, keepdim=True)
+    skewness = (residuals.pow(3).mean(dim=1) / rolling_std_dev.pow(3)).clamp(min=-1.0, max=1.0)
+    kurtosis = (residuals.pow(4).mean(dim=1) / rolling_std_dev.pow(4)).clamp(max=6.0) - 3
+
+    tail_adjusted_excess_return = excess_return * (1 - (kurtosis.abs() / 10).clamp(max=1.0))
+
+    drawdown = (log_returns.cumsum(dim=1) - log_returns.cumsum(dim=1).max(dim=1, keepdim=True)[0]).min(dim=1)[0]
+    max_drawdown = drawdown.mean()
+    drawdown_penalty = (1 / (1 + max_drawdown.abs())).clamp(max=1.0)
+
+    adjusted_sharpe = tail_adjusted_excess_return * (1 - drawdown_penalty) / (rolling_std_dev * (1 + skewness / 6).clamp(min=1e-8))
+
+    weights = torch.softmax(torch.arange(n_assets, dtype=log_returns.dtype, device=log_returns.device) / n_assets, dim=0)
+    weighted_adjusted_sharpe = (weights * adjusted_sharpe).sum()
+
+    volatility_forecast = log_returns[:, -n_periods // 4:].std(dim=1, unbiased=False).clamp(min=1e-8)
+    regime_factor = torch.where(excess_return > 0, 1.1, 0.9)
+
+    combined_metric = (weighted_adjusted_sharpe * regime_factor) / (rolling_std_dev + volatility_forecast)
+
+    high_order_adjustment = (1 + (skewness.pow(2) + kurtosis) / 12).clamp(min=1e-8)
+    
+    entropy = -torch.sum(log_returns.softmax(dim=1) * log_returns.softmax(dim=1).log(), dim=1).clamp(min=1e-8)
+    
+    temporal_decay_adjustment = log_returns.mean(dim=1).clamp(min=1e-8)
+    
+    final_metric = combined_metric * high_order_adjustment * (1 + temporal_decay_adjustment / rolling_std_dev) * (1 + 0.5 * entropy)
+
+    transaction_cost = 0.001 * log_returns.std(dim=1).clamp(min=1e-8)
+    final_metric = final_metric - transaction_cost
+
+    return final_metric
+""",
+"""
+def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
+    n_assets, n_periods = log_returns.shape
+    adjusted_rf_rate = risk_free_rate * (1 + log_returns.std(dim=1) / log_returns.mean(dim=1).clamp(min=1e-8))
+    excess_return = log_returns.mean(dim=1) - adjusted_rf_rate
+
+    rolling_std_dev = log_returns.unfold(1, n_periods // 4, 1).std(dim=2, unbiased=False).mean(dim=1).clamp(min=1e-8)
+
+    residuals = log_returns - log_returns.mean(dim=1, keepdim=True)
+    skewness = (residuals.pow(3).mean(dim=1) / rolling_std_dev.pow(3)).clamp(min=-1.0, max=1.0)
+    kurtosis = (residuals.pow(4).mean(dim=1) / rolling_std_dev.pow(4)).clamp(max=6.0) - 3
+
+    tail_adjusted_excess_return = excess_return * (1 - (kurtosis.abs() / 12).clamp(max=1.0))
+
+    drawdown = (log_returns.cumsum(dim=1) - log_returns.cumsum(dim=1).max(dim=1, keepdim=True)[0]).min(dim=1)[0]
+    max_drawdown = drawdown.mean()
+    drawdown_penalty = torch.exp(-max_drawdown.abs())
+
+    adjustment_factor = (1 / (1 + skewness.pow(2).abs())).clamp(min=0.1)
+    adjusted_sharpe = tail_adjusted_excess_return * (1 - drawdown_penalty) / (rolling_std_dev * adjustment_factor)
+
+    weights = torch.softmax(torch.arange(n_assets, dtype=log_returns.dtype, device=log_returns.device) / n_assets, dim=0)
+    weighted_adjusted_sharpe = (weights * adjusted_sharpe).sum()
+
+    volatility_forecast = log_returns[:, -n_periods // 4:].std(dim=1, unbiased=False).clamp(min=1e-8)
+    regime_factor = torch.where(excess_return > 0, 1.1, 0.9)
+
+    combined_metric = (weighted_adjusted_sharpe * regime_factor) / (rolling_std_dev + volatility_forecast)
+
+    high_order_adjustment = (1 + (skewness.pow(2) + kurtosis) / 10).clamp(min=1e-8)
+    temporal_decay_adjustment = log_returns.mean(dim=1).clamp(min=1e-8)
+
+    final_metric = (combined_metric * high_order_adjustment * (1 + temporal_decay_adjustment / rolling_std_dev)).clamp(min=0)
+
+    entropy = -torch.nansum(log_returns.softmax(dim=1) * log_returns.softmax(dim=1).log(), dim=1).clamp(min=1e-8)
+    final_metric = final_metric * (1 + 0.5 * entropy)
+
+    transaction_cost = 0.001 * log_returns.std(dim=1).clamp(min=1e-8)
+    final_metric = final_metric - transaction_cost
+
+    return final_metric
+""",
+"""
+def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
+    n_assets, n_periods = log_returns.shape
+    adjusted_rf_rate = risk_free_rate * (1 + log_returns.std(dim=1) / log_returns.mean(dim=1).clamp(min=1e-8))
+    excess_return = log_returns.mean(dim=1) - adjusted_rf_rate
+
+    rolling_std_dev = log_returns.unfold(1, n_periods // 4, 1).std(dim=2, unbiased=False).mean(dim=1).clamp(min=1e-8)
+
+    residuals = log_returns - log_returns.mean(dim=1, keepdim=True)
+    skewness = (residuals.pow(3).mean(dim=1) / rolling_std_dev.pow(3)).clamp(min=-1.0, max=1.0)
+    kurtosis = (residuals.pow(4).mean(dim=1) / rolling_std_dev.pow(4)).clamp(max=6.0) - 3
+
+    tail_adjusted_excess_return = excess_return * (1 - (kurtosis.abs() / 10).clamp(max=1.0))
+
+    drawdown = (log_returns.cumsum(dim=1) - log_returns.cumsum(dim=1).max(dim=1, keepdim=True)[0]).min(dim=1)[0]
+    max_drawdown = drawdown.mean()
+    drawdown_penalty = (1 / (1 + max_drawdown.abs())).clamp(max=1.0)
+
+    adjusted_sharpe = tail_adjusted_excess_return * (1 - drawdown_penalty) / (rolling_std_dev * (1 + skewness / 6).clamp(min=1e-8))
+
+    weights = torch.softmax(torch.arange(n_assets, dtype=log_returns.dtype, device=log_returns.device) / n_assets, dim=0)
+    weighted_adjusted_sharpe = (weights * adjusted_sharpe).sum()
+
+    volatility_forecast = log_returns[:, -n_periods // 4:].std(dim=1, unbiased=False).clamp(min=1e-8)
+    regime_factor = torch.where(excess_return > 0, 1.1, 0.9)
+
+    combined_metric = (weighted_adjusted_sharpe * regime_factor) / (rolling_std_dev + volatility_forecast)
+
+    high_order_adjustment = (1 + (skewness.pow(2) + kurtosis) / 12).clamp(min=1e-8)
+
+    entropy = -torch.sum(log_returns.softmax(dim=1) * log_returns.softmax(dim=1).log(), dim=1).clamp(min=1e-8)
+
+    transaction_cost = 0.001 * log_returns.std(dim=1).clamp(min=1e-8)
+
+    final_metric = combined_metric * high_order_adjustment * (1 + 0.5 * entropy) - transaction_cost
+    
+    temporal_decay_adjustment = log_returns.mean(dim=1).clamp(min=1e-8)
+    
+    high_order_adjustment = high_order_adjustment * (1 + temporal_decay_adjustment / rolling_std_dev)
+
+    return final_metric * high_order_adjustment * (1 + volatility_forecast / rolling_std_dev)
 """
 ]
 
