@@ -54,6 +54,35 @@ def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> tor
     risk_adjusted_std_dev = adjusted_std_dev + downside_risk
     return excess_return / risk_adjusted_std_dev
 
+def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
+    dynamic_risk_free_rate = risk_free_rate + log_returns.mean(dim=-1).detach().std(dim=-1).exp() * 0.01
+    adjusted_returns = log_returns - dynamic_risk_free_rate
+    mean_excess_return = adjusted_returns.mean(dim=-1).exp()
+    
+    time_weighted_volatility = log_returns.unfold(1, 5, 1).std(dim=2).mean(dim=1)
+    adjusted_std_dev = (log_returns.var(dim=-1, unbiased=False) + time_weighted_volatility).sqrt()
+
+    downside_returns = log_returns[log_returns < 0]
+    downside_risk = downside_returns.std(dim=-1, unbiased=False).nan_to_num(0)
+
+    downside_count = (log_returns < 0).sum(dim=-1).float().clamp(min=1)
+    safety_coefficient = (downside_count.sqrt() * adjusted_std_dev).nan_to_num(0)
+    total_downside_risk = (downside_risk + safety_coefficient) / downside_count
+
+    risk_adjusted_std_dev = adjusted_std_dev + total_downside_risk
+
+    skewness = ((adjusted_returns - adjusted_returns.mean(dim=-1, keepdim=True)).pow(3).mean(dim=-1) /
+                 (adjusted_std_dev.pow(3).clamp(min=1e-5)))
+    kurtosis = ((adjusted_returns - adjusted_returns.mean(dim=-1, keepdim=True)).pow(4).mean(dim=-1) /
+                 (adjusted_std_dev.pow(4).clamp(min=1e-5)))
+
+    adjusted_excess_return = mean_excess_return * (1 + 0.5 * skewness - 0.25 * kurtosis)
+
+    conditional_adjustment = 1 + (downside_count - 1).div(downside_count).clamp(min=0)
+
+    tail_risk_adjustment = (log_returns < -0.02).float().mean(dim=-1)
+    return adjusted_excess_return.mul(conditional_adjustment).div(risk_adjusted_std_dev) * (1 + skewness.abs() * 0.1 * tail_risk_adjustment)
+
 def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, decay_factor=0.94) -> torch.Tensor:
     n_assets, n_periods = log_returns.shape
     mean_return = log_returns.mean(dim=1)
