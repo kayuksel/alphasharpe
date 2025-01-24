@@ -41,30 +41,40 @@ def calculate_psr(rewards):
     return sharpe, psr_out  
 
 '''
-def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, decay_factor = 0.925) -> torch.Tensor:
+def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, decay_factor=0.94) -> torch.Tensor:
     n_assets, n_periods = log_returns.shape
 
     mean_return = log_returns.mean(dim=1)
+    geom_mean_return = (log_returns.exp()).mean(dim=1).log()
     std_dev = log_returns.std(dim=1).clamp_min(1e-8)
     residuals = log_returns - mean_return.unsqueeze(1)
 
     skewness = residuals.pow(3).mean(dim=1) / std_dev.pow(3)
     kurtosis = residuals.pow(4).mean(dim=1) / std_dev.pow(4) - 3
 
-    excess_return = mean_return - risk_free_rate
-    tail_adjusted_excess_return = excess_return * (1 - kurtosis / 48)
+    excess_return = geom_mean_return - risk_free_rate
+    tail_adjusted_excess_return = excess_return * (1 - (kurtosis.abs() / 12).clamp(max=1.0))
+    
+    rolling_mean = log_returns.unfold(1, 20, 1).mean(dim=(2, 1))
+    trimmed_mean = log_returns.clone()
+    trimmed_mean = trimmed_mean - torch.quantile(trimmed_mean, 0.01, dim=1, keepdim=True)
+    trimmed_mean = trimmed_mean - torch.quantile(trimmed_mean, 0.99, dim=1, keepdim=True)
 
     entropy_term = -(log_returns * (log_returns.exp() + 1e-8)).mean(dim=1)
-    adjusted_sharpe = (tail_adjusted_excess_return / std_dev) * (1 + skewness / 6 + entropy_term / 10)
-
-    weights = decay_factor ** torch.arange(n_assets, dtype=log_returns.dtype, device=log_returns.device)
-    weighted_adjusted_sharpe = torch.dot(weights, adjusted_sharpe) / weights.sum()
-
-    scaling_factor = torch.rsqrt(torch.tensor(n_periods, dtype=log_returns.dtype, device=log_returns.device))
-    exploratory_term = (1 + kurtosis.abs().sqrt().clamp_max(3.0) / 12) * (1 + skewness.abs().sqrt().clamp_max(3.0) / 12)
-    entropy_exploratory_scaling = entropy_term.abs().clamp_min(0.5).clamp_max(1.5)
     
-    return (weighted_adjusted_sharpe * scaling_factor) / std_dev * exploratory_term * entropy_exploratory_scaling
+    adjusted_sharpe = (tail_adjusted_excess_return / std_dev) * (1 + skewness / 6 + entropy_term / 10)
+    
+    weights = (1 - decay_factor) * decay_factor ** torch.arange(n_assets, dtype=log_returns.dtype, device=log_returns.device)
+    cumulative_weights = weights.cumsum(dim=0) + 1e-8
+    weighted_adjusted_sharpe = (weights * adjusted_sharpe).cumsum(dim=0) / cumulative_weights
+
+    oos_adjustment = (1 + (kurtosis.abs().clamp_max(3.0) - 3) / 12).sqrt()
+    scaling_factor = torch.rsqrt(torch.tensor(n_periods, dtype=log_returns.dtype, device=log_returns.device))
+    exploratory_term = (1 + skewness.abs().clamp_max(3.0) / 8) * (1 + kurtosis.abs().clamp_max(3.0) / 8)
+
+    penalty_factor = torch.mean(torch.minimum(trimmed_mean, torch.tensor(0.0, device=log_returns.device)), dim=1) / (std_dev + 1e-8)
+
+    return (weighted_adjusted_sharpe * scaling_factor * oos_adjustment * (1 - penalty_factor)) / std_dev * exploratory_term * entropy_term.abs().clamp_min(0.5).clamp_max(1.5)
 '''
 
 def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, decay_factor = 0.94) -> torch.Tensor:
