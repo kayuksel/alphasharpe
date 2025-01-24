@@ -46,6 +46,14 @@ def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> tor
     std_dev = (log_returns.var(dim=-1) + 5e-3) * (log_returns.std(dim=-1) + 5e-3)
     return excess_return / std_dev.sqrt()
 
+def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
+    adjusted_returns = log_returns - risk_free_rate
+    excess_return = adjusted_returns.mean(dim=-1).exp()
+    adjusted_std_dev = (log_returns.std(dim=-1) ** 2 + 5e-3).sqrt()
+    downside_risk = (log_returns[log_returns < 0].std(dim=-1, unbiased=False) + (log_returns < 0).sum(dim=-1).float().clamp(min=1e-5).sqrt() * log_returns.std(dim=-1, unbiased=False)) / ((log_returns < 0).sum(dim=-1).float().clamp(min=1e-5) + 1e-5)
+    risk_adjusted_std_dev = adjusted_std_dev + downside_risk
+    return excess_return / risk_adjusted_std_dev
+
 def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, decay_factor=0.94) -> torch.Tensor:
     n_assets, n_periods = log_returns.shape
     mean_return = log_returns.mean(dim=1)
