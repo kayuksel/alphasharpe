@@ -1,2 +1,2 @@
 # alphasharpe
-AlphaSharpe: LLM-Driven Evolution of Robust Risk-Adjusted Metrics
+AlphaSharpe: LLM-Driven "Discovery" of Robust Risk-Adjusted Metrics
