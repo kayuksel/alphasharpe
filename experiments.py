@@ -40,7 +40,7 @@ def calculate_psr(rewards):
     psr_out[psr_out.isnan()] = 0.0
     return sharpe, psr_out  
 
-def alpha_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, epsilon: float = 1e-5) -> torch.Tensor:
+def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, epsilon: float = 1e-5) -> torch.Tensor:
     n_periods = log_returns.shape[-1]
     log_returns = log_returns.unsqueeze(0) if log_returns.ndim == 1 else log_returns
 
