@@ -40,52 +40,34 @@ def calculate_psr(rewards):
     psr_out[psr_out.isnan()] = 0.0
     return sharpe, psr_out  
 
-def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
-    n_assets, n_periods = log_returns.shape
-    excess_return = log_returns.mean(dim=1) - risk_free_rate
-    std_dev = log_returns.std(dim=1, unbiased=False).clamp(min=1e-8)
+def alpha_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, epsilon: float = 1e-5) -> torch.Tensor:
+    n_periods = log_returns.shape[-1]
+    log_returns = log_returns.unsqueeze(0) if log_returns.ndim == 1 else log_returns
 
-    skewness = (log_returns - log_returns.mean(dim=1, keepdim=True)).pow(3).mean(dim=1) / std_dev.pow(3).clamp(min=1e-8)
-    skewness = skewness.clamp(min=-1.0, max=1.0)
+    # Calculate mean log excess return (expected log excess return)
+    mean_log_excess_return = log_returns.mean(dim=-1) - risk_free_rate
 
-    kurtosis = (log_returns - log_returns.mean(dim=1, keepdim=True)).pow(4).mean(dim=1) / std_dev.pow(4).clamp(min=1e-8) - 3
-    kurtosis = kurtosis.clamp(max=6.0)
+    # Calculate standard deviation of log returns
+    std_log_returns = log_returns.std(dim=-1, unbiased=False)
 
-    tail_adjusted_excess_return = excess_return * (1 - (kurtosis.abs() / 10).clamp(max=1.0))
+    # Alpha S1 calculation
+    numerator = mean_log_excess_return.exp()
+    denominator_s1 = torch.sqrt((std_log_returns.pow(2) + epsilon) * (std_log_returns + epsilon))
+    alpha_s1 = numerator / denominator_s1
 
-    drawdown = (log_returns.cumsum(dim=1) - log_returns.cumsum(dim=1).max(dim=1, keepdim=True)[0]).min(dim=1)[0]
-    max_drawdown = drawdown.clamp(min=0)
-    drawdown_penalty = (1 / (1 + max_drawdown.abs())).clamp(max=1.0)
+    # Downside Risk (DR) calculation
+    negative_returns = log_returns[log_returns < 0]
+    downside_risk = (
+        negative_returns.std(dim=-1, unbiased=False) +
+        (negative_returns.numel() ** 0.5) * std_log_returns
+    ) / (negative_returns.numel() + epsilon)
 
-    entropy_measure = -torch.sum(torch.exp(log_returns - log_returns.mean(dim=1, keepdim=True)) * (log_returns - log_returns.mean(dim=1, keepdim=True)), dim=1) / n_periods
-    entropy_penalty = torch.clamp(entropy_measure, min=1e-8)
+    # Forecasted Volatility (V) calculation
+    forecasted_volatility = log_returns[:, -n_periods // 4:].std(dim=-1, unbiased=False).sqrt()
 
-    recent_returns = log_returns[:, -n_periods // 4:]
-    recent_mean = recent_returns.mean(dim=1).clamp(min=1e-8)
-    recent_std = recent_returns.std(dim=1).clamp(min=1e-8)
-
-    volatility_scaling = (1 + std_dev / n_periods).clamp(min=1e-8)
-
-    weights = torch.softmax(torch.arange(n_assets, dtype=log_returns.dtype, device=log_returns.device) / n_assets, dim=0)
-    weighted_adjusted_sharpe = (weights * tail_adjusted_excess_return).sum()
-
-    dynamic_scaling = (1 + recent_mean / (std_dev + 1e-8)).clamp(max=2.0)
-
-    regime_indicator = (recent_std - std_dev).clamp(min=1e-8)
-    regime_scaling = torch.exp(-regime_indicator)
-
-    high_order_term = (1 + skewness.pow(2) * 0.5 + kurtosis / 10).clamp(min=1e-8)
-
-    penalty_adjustment = (1 - drawdown_penalty) * (1 - (entropy_penalty / std_dev)).clamp(min=0, max=1)
-    adjusted_sharpe = (weighted_adjusted_sharpe * dynamic_scaling * penalty_adjustment) / (std_dev * (1 + drawdown_penalty))
-
-    final_metric = adjusted_sharpe * high_order_term * regime_scaling
-
-    # Incorporate a time-varying entropy adjustment based on recent performance
-    entropy_adjustment = torch.std(entropy_measure.view(-1, 1), dim=0).view(-1) / (std_dev + 1e-8)
-    final_metric = final_metric * (1 - entropy_adjustment)
-
-    return final_metric
+    # Alpha S2 calculation
+    denominator_s2 = torch.sqrt(std_log_returns.pow(2) + epsilon) + downside_risk + forecasted_volatility
+    return numerator / denominator_s2
 
 def ndcg(scores: torch.Tensor, labels: torch.Tensor, percent: float = 0.25, log_base: int = 2) -> torch.Tensor:
     """Compute normalized discounted cumulative gain (NDCG) at a specific percentage cutoff.
