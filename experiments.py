@@ -50,17 +50,12 @@ def robust_sharpe(
 ) -> torch.Tensor:
     n_periods = log_returns.shape[-1]
     log_returns = log_returns.unsqueeze(0) if log_returns.ndim == 1 else log_returns
-
+    
     # Calculate mean log excess return (expected log excess return)
     mean_log_excess_return = log_returns.mean(dim=-1) - risk_free_rate
 
     # Calculate standard deviation of log returns
     std_log_returns = log_returns.std(dim=-1, unbiased=False)
-
-    # Alpha S1 calculation
-    numerator = mean_log_excess_return.exp()
-    denominator_s1 = torch.sqrt((std_log_returns.pow(2) + epsilon) * (std_log_returns + epsilon))
-    alpha_s1 = numerator / denominator_s1
 
     # Downside Risk (DR) calculation
     negative_returns = log_returns[log_returns < 0]
@@ -71,10 +66,7 @@ def robust_sharpe(
 
     # Forecasted Volatility (V) calculation
     forecasted_volatility = forecast_volatility_factor * log_returns[:, -n_periods // forecast_window:].std(dim=-1, unbiased=False).sqrt()
-
-    # Alpha S2 calculation
-    denominator_s2 = torch.sqrt(std_log_returns.pow(2) + epsilon) + downside_risk + forecasted_volatility
-    return numerator / denominator_s2
+    return mean_log_excess_return.exp() / (torch.sqrt(std_log_returns.pow(2) + epsilon) + downside_risk + forecasted_volatility)
 
 def ndcg(scores: torch.Tensor, labels: torch.Tensor, percent: float = 0.25, log_base: int = 2) -> torch.Tensor:
     """Compute normalized discounted cumulative gain (NDCG) at a specific percentage cutoff.
