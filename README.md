@@ -40,4 +40,4 @@ The **AlphaSharpe** ratio is calculated as:
 
 ### Summary:
 
-This formula integrates **mean log excess returns**, **downside risk**, and **forecasted volatility** into a single metric, balancing risk and expected performance.
+This formula **mean log excess returns**, **downside risk**, and **forecasted volatility** into a single metric, balancing risk and expected performance.
