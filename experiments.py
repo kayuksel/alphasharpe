@@ -42,7 +42,7 @@ def calculate_psr(rewards):
 
 def robust_sharpe(
     log_returns: torch.Tensor,
-    risk_free_rate: float = 0.00,
+    risk_free_rate: float = 0.0,
     epsilon: float = 1.5e-5,
     downside_risk_factor: float = 2.0,
     forecast_volatility_factor: float = 1.33,
