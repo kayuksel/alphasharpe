@@ -39,7 +39,8 @@ def calculate_psr(rewards):
     psr_out = torch_cdf(sharpe / psr_in.sqrt())
     psr_out[psr_out.isnan()] = 0.0
     return sharpe, psr_out  
-
+    
+# AlphaSharpe metric discovered with parameters hypertuned
 def robust_sharpe(
     log_returns: torch.Tensor, risk_free_rate: float = 0.0, 
     epsilon: float = 1.5e-5, dr: float = 2.0, fv: float = 1.33, window: int = 3
