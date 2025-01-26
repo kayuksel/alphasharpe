@@ -41,32 +41,22 @@ def calculate_psr(rewards):
     return sharpe, psr_out  
 
 def robust_sharpe(
-    log_returns: torch.Tensor,
-    risk_free_rate: float = 0.0,
-    epsilon: float = 1.5e-5,
-    downside_risk_factor: float = 2.0,
-    forecast_volatility_factor: float = 1.33,
-    forecast_window: int = 3
+    log_returns: torch.Tensor, risk_free_rate: float = 0.0, 
+    epsilon: float = 1.5e-5, dr: float = 2.0, fv: float = 1.33, window: int = 3
 ) -> torch.Tensor:
-    n_periods = log_returns.shape[-1]
     log_returns = log_returns.unsqueeze(0) if log_returns.ndim == 1 else log_returns
-    
-    # Calculate mean log excess return (expected log excess return)
+    # Calculate mean log excess return (expected log excess return) and standard deviation of log returns
     mean_log_excess_return = log_returns.mean(dim=-1) - risk_free_rate
-
-    # Calculate standard deviation of log returns
     std_log_returns = log_returns.std(dim=-1, unbiased=False)
-
     # Downside Risk (DR) calculation
     negative_returns = log_returns[log_returns < 0]
-    downside_risk = downside_risk_factor * (
+    downside = dr * (
         negative_returns.std(dim=-1, unbiased=False) +
         (negative_returns.numel() ** 0.5) * std_log_returns
     ) / (negative_returns.numel() + epsilon)
-
     # Forecasted Volatility (V) calculation
-    forecasted_volatility = forecast_volatility_factor * log_returns[:, -n_periods // forecast_window:].std(dim=-1, unbiased=False).sqrt()
-    return mean_log_excess_return.exp() / (torch.sqrt(std_log_returns.pow(2) + epsilon) + downside_risk + forecasted_volatility)
+    volatility = fv * log_returns[:, -log_returns.shape[-1] // window:].std(dim=-1, unbiased=False).sqrt()
+    return mean_log_excess_return.exp() / ((std_log_returns.pow(2) + epsilon).sqrt() + downside + volatility)
 
 def ndcg(scores: torch.Tensor, labels: torch.Tensor, percent: float = 0.25, log_base: int = 2) -> torch.Tensor:
     """Compute normalized discounted cumulative gain (NDCG) at a specific percentage cutoff.
