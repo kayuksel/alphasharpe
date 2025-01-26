@@ -40,7 +40,14 @@ def calculate_psr(rewards):
     psr_out[psr_out.isnan()] = 0.0
     return sharpe, psr_out  
 
-def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, epsilon: float = 1e-5) -> torch.Tensor:
+def robust_sharpe(
+    log_returns: torch.Tensor,
+    risk_free_rate: float = 0.00,
+    epsilon: float = 1.5443908961204e-05,
+    downside_risk_factor: float = 1.887219103968139,
+    forecast_volatility_factor: float = 1.3306268079493957,
+    forecast_window: int = 3
+) -> torch.Tensor:
     n_periods = log_returns.shape[-1]
     log_returns = log_returns.unsqueeze(0) if log_returns.ndim == 1 else log_returns
 
@@ -57,13 +64,13 @@ def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0, epsilo
 
     # Downside Risk (DR) calculation
     negative_returns = log_returns[log_returns < 0]
-    downside_risk = (
+    downside_risk = downside_risk_factor * (
         negative_returns.std(dim=-1, unbiased=False) +
         (negative_returns.numel() ** 0.5) * std_log_returns
     ) / (negative_returns.numel() + epsilon)
 
     # Forecasted Volatility (V) calculation
-    forecasted_volatility = log_returns[:, -n_periods // 4:].std(dim=-1, unbiased=False).sqrt()
+    forecasted_volatility = forecast_volatility_factor * log_returns[:, -n_periods // forecast_window:].std(dim=-1, unbiased=False).sqrt()
 
     # Alpha S2 calculation
     denominator_s2 = torch.sqrt(std_log_returns.pow(2) + epsilon) + downside_risk + forecasted_volatility
