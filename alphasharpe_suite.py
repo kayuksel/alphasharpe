@@ -1,5 +1,5 @@
 import _pickle as cPickle
-import torch, pdb
+import torch
 import numpy as np
 
 def alphasharpe_metric(
@@ -76,8 +76,7 @@ portfolio_returns = (portfolio_weights.unsqueeze(1) * top_test_returns).sum(dim=
 # Step 6: Compute Sharpe Ratio on test set
 mean_portfolio_return = portfolio_returns.mean()
 std_portfolio_return = portfolio_returns.std(unbiased=False)
-sharpe_ratio = mean_portfolio_return / (std_portfolio_return + 1e-8)
+sharpe_ratio = mean_portfolio_return / (std_portfolio_return + 1e-8) 
 
-# Print results
 print(f"Mean Portfolio Return: {mean_portfolio_return.item():.6f}")
 print(f"Portfolio Sharpe Ratio: {sharpe_ratio.item():.6f}")
