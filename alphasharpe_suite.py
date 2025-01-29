@@ -57,26 +57,15 @@ cutoff_index = valid_data.size(1) // 5
 train = valid_data[:, :cutoff_index]
 test = valid_data[:, cutoff_index:]
 
-# Step 1: Compute AlphaSharpe metric for each asset in the training set
-alpha_sharpe_values = alphasharpe_metric(train)
+# Step 1: Extract only top 25% of assets based on AlphaSharpe metric for portfolio allocation
+top_indices = torch.argsort(alphasharpe_metric(train), descending=True)[:train.shape[0] // 4]  
 
-# Step 2: Select the top 25% of assets based on AlphaSharpe metric
-top_indices = torch.argsort(alpha_sharpe_values, descending=True)[:train.shape[0] // 4]  
+# Step 2: Compute portfolio weights using AlphaSharpe Portfolio function
+portfolio_weights = alphasharpe_portfolio(train[top_indices, :])
 
-# Step 3: Extract only top 25% of assets for computing portfolio weights
-top_train_returns = train[top_indices, :]  # Training set with only selected assets
-top_test_returns = test[top_indices, :]  # Test set with only selected assets
+# Step 3: Compute portfolio return on the test set
+portfolio_returns = (portfolio_weights.unsqueeze(1) * test[top_indices, :]).sum(dim=0)
 
-# Step 4: Compute portfolio weights using AlphaSharpe Portfolio function
-portfolio_weights = alphasharpe_portfolio(top_train_returns)
-
-# Step 5: Compute portfolio return on the test set
-portfolio_returns = (portfolio_weights.unsqueeze(1) * top_test_returns).sum(dim=0)
-
-# Step 6: Compute Sharpe Ratio on test set
-mean_portfolio_return = portfolio_returns.mean()
-std_portfolio_return = portfolio_returns.std(unbiased=False)
-sharpe_ratio = mean_portfolio_return / (std_portfolio_return + 1e-8) 
-
-print(f"Mean Portfolio Return: {mean_portfolio_return.item():.6f}")
+# Step 4: Compute Sharpe Ratio on test set
+sharpe_ratio = portfolio_returns.mean() / (portfolio_returns.std(unbiased=False) + 1e-8) 
 print(f"Portfolio Sharpe Ratio: {sharpe_ratio.item():.6f}")
