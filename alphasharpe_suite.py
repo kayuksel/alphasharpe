@@ -8,14 +8,9 @@ def sharpe_ratio_metric(excess_log_returns: torch.Tensor, epsilon: float = 1e-8)
     std_return = excess_log_returns.std(dim=-1, unbiased=False) + epsilon
     return mean_return / std_return
 
-def alphasharpe_metric(
-    excess_log_returns: torch.Tensor,
-    epsilon: float = 1.5e-5,
-    downside_risk_factor: float = 2.0,
-    forecast_volatility_factor: float = 1.33,
-    forecast_window: int = 3
-) -> torch.Tensor:
-    """Compute AlphaSharpe metric for ranking assets."""
+def alphasharpe_metric(excess_log_returns: torch.Tensor, epsilon: float = 1.5e-5,
+    downside_risk_factor: float = 2.0, forecast_volatility_factor: float = 1.33, forecast_window: int = 3) -> torch.Tensor:
+
     n_periods = excess_log_returns.shape[-1]
     excess_log_returns = excess_log_returns.unsqueeze(0) if excess_log_returns.ndim == 1 else excess_log_returns
     
