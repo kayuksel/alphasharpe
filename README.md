@@ -1,9 +1,6 @@
 # AlphaSharpe
 AlphaSharpe: LLM-Driven "Discovery" of Robust Risk-Adjusted Metrics
 
-For more details, refer to the paper:  
-[https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5111141](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5111141)
-
 ## AlphaSharpe Formula
 
 The **AlphaSharpe** ratio is calculated as:
