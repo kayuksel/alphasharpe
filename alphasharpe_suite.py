@@ -68,4 +68,4 @@ portfolio_returns = (portfolio_weights.unsqueeze(1) * test[top_indices, :]).sum(
 
 # Step 4: Compute Sharpe Ratio on test set
 sharpe_ratio = portfolio_returns.mean() / (portfolio_returns.std(unbiased=False) + 1e-8) 
-print(f"Portfolio Sharpe Ratio: {sharpe_ratio.item():.6f}")
+print(f"AlphaSharpe Out-of-Sample Sharpe Ratio: {sharpe_ratio.item():.6f}")
