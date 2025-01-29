@@ -50,7 +50,9 @@ def alphasharpe_portfolio(excess_log_returns: torch.Tensor) -> torch.Tensor:
 
 with open('Dataset.pkl', 'rb') as f: Dataset = cPickle.load(f)
 valid_data = np.array(Dataset).T
-valid_data = torch.from_numpy(valid_data).float().cuda()
+valid_data = torch.from_numpy(valid_data).float()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+valid_data = valid_data.to(device)
 cutoff_index = valid_data.size(1) // 5
 train = valid_data[:, :cutoff_index]
 test = valid_data[:, cutoff_index:]
