@@ -35,10 +35,8 @@ def alphasharpe_metric(
     return mean_log_excess_return.exp() / (std_excess_log_returns + downside_risk + forecasted_volatility)
 
 def alphasharpe_portfolio(excess_log_returns: torch.Tensor) -> torch.Tensor:
-    """Compute optimized AlphaSharpe portfolio weights."""
-    cov_matrix = excess_log_returns.cov() + 1e-6 * torch.eye(excess_log_returns.shape[0], device=excess_log_returns.device)
-    
     # Compute risk-adjusted returns
+    cov_matrix = excess_log_returns.cov() + 1e-6 * torch.eye(excess_log_returns.shape[0], device=excess_log_returns.device)
     risk_adjusted_returns = (torch.linalg.inv(cov_matrix) @ excess_log_returns.mean(dim=1)).clamp(min=0.0)
     
     # Adjust returns using stability factor
