@@ -45,7 +45,6 @@ def alphasharpe_portfolio(excess_log_returns: torch.Tensor) -> torch.Tensor:
 
     # Apply entropy-based regularization to encourage diversification by penalizing concentrated allocations
     final_weights = (weights * (weights.mean() * torch.log(weights + 1e-8)).exp()).clamp(min=0.0)
-
     return final_weights / final_weights.sum()
 
 with open('Dataset.pkl', 'rb') as f: Dataset = cPickle.load(f)
