@@ -27,7 +27,7 @@ def alphasharpe_metric(
 
     # Forecasted Volatility (V) calculation
     forecasted_volatility = forecast_volatility_factor * excess_log_returns[:, -n_periods // forecast_window:].std(dim=-1, unbiased=False).sqrt()
-    return mean_log_excess_return.exp() / (torch.sqrt(std_excess_log_returns.pow(2) + epsilon) + downside_risk + forecasted_volatility)
+    return mean_log_excess_return.exp() / (std_excess_log_returns + downside_risk + forecasted_volatility)
 
 def alphasharpe_portfolio(excess_log_returns: torch.Tensor) -> torch.Tensor:
     # Compute the covariance matrix of excess log returns and add a small diagonal component for numerical stability
