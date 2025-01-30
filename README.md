@@ -1,4 +1,4 @@
-# AlphaSharpe
+# AlphaSharpe & AlphaPortfolio
 AlphaSharpe: LLM-Driven "Discovery" of Robust Risk-Adjusted Metrics
 
 ## AlphaSharpe Formula
