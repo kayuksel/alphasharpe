@@ -7,8 +7,6 @@ pd.set_option("display.max_rows", None)
 pd.set_option("display.max_columns", None)
 pd.set_option("display.width", 1000)
 
-import torch
-
 def portfolio_statistics(log_returns: torch.Tensor, weights: torch.Tensor, risk_free_rate: float = 0.0) -> dict:
     """
     Computes various portfolio performance metrics given log returns and asset weights.
@@ -174,10 +172,4 @@ test = valid_data[:, cutoff_index:]
 
 # Run the enhanced comparison function
 optimized_results_with_improvement = compare_optimization_methods_with_improvement(train, test, function_definitions)
-
-# Ensure full display of the DataFrame
-pd.set_option("display.max_rows", None)
-pd.set_option("display.max_columns", None)
-pd.set_option("display.width", 1000)
-
 print(optimized_results_with_improvement)
