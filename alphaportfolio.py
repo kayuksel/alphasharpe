@@ -1,15 +1,22 @@
-import _pickle as cPickle
 import torch
 import numpy as np
+import pandas as pd
+import _pickle as cPickle
 
-def portfolio_calmar(log_returns: torch.Tensor, weights: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
-    """
-    Computes the Calmar Ratio of a portfolio given log returns and asset weights.
-    """
-    # Ensure weights are properly shaped: (assets,)
-    weights = weights.abs() / weights.abs().sum()  # Normalize weights to sum to 1
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", 1000)
 
-    # Compute portfolio cumulative log returns
+import torch
+
+def portfolio_statistics(log_returns: torch.Tensor, weights: torch.Tensor, risk_free_rate: float = 0.0) -> dict:
+    """
+    Computes various portfolio performance metrics given log returns and asset weights.
+    """
+    # Normalize weights to sum to 1
+    weights = weights.abs() / weights.abs().sum()  
+
+    # Compute portfolio returns over time
     portfolio_returns = (weights @ log_returns).cumsum(dim=0).exp()  # Convert log returns to price series
 
     # Compute drawdowns
@@ -21,27 +28,37 @@ def portfolio_calmar(log_returns: torch.Tensor, weights: torch.Tensor, risk_free
     mean_log_return = log_returns.mean()  # Scalar
     annualized_return = (torch.exp(mean_log_return) - 1) * 252  # Assuming 252 trading days
 
-    # Compute Calmar Ratio
+    # Compute Calmar Ratio (identical to portfolio_calmar function)
     calmar_ratio = annualized_return / max_drawdown
-    return calmar_ratio
 
-def portfolio_sharpe(log_returns: torch.Tensor, weights: torch.Tensor, risk_free_rate: float = 0.0) -> torch.Tensor:
-    """
-    Computes the Sharpe Ratio of a portfolio given log returns and asset weights.
-    """
-    # Ensure weights are properly shaped: (assets,)
-    weights = weights / weights.abs().sum()  # Normalize weights to sum to 1
-
-    # Compute portfolio returns over time
-    portfolio_returns = (weights @ log_returns)  # (time,)
-
-    # Compute mean return and volatility over time
-    mean_return = portfolio_returns.mean()  # Scalar
-    portfolio_volatility = portfolio_returns.std() + 1e-8  # Scalar (prevent division by zero)
+    # Compute annualized volatility
+    std_dev = (weights @ log_returns).std() + 1e-8  # Avoid division by zero
+    annualized_volatility = std_dev * (252 ** 0.5)  # Annualized volatility
 
     # Compute Sharpe Ratio
-    sharpe_ratio = (mean_return - risk_free_rate) / portfolio_volatility
-    return sharpe_ratio
+    sharpe_ratio = (annualized_return - risk_free_rate) / annualized_volatility
+
+    # Compute Sortino Ratio (only downside deviation)
+    downside_returns = torch.where(portfolio_returns < risk_free_rate, portfolio_returns, torch.tensor(0.0, device=portfolio_returns.device))
+    downside_std = downside_returns.std() + 1e-8  # Avoid division by zero
+    sortino_ratio = (annualized_return - risk_free_rate) / downside_std
+
+    # Compute Omega Ratio (ratio of returns above threshold vs below)
+    threshold = risk_free_rate / 252  # Convert annual risk-free rate to daily
+    gains = torch.where(portfolio_returns > threshold, portfolio_returns - threshold, torch.tensor(0.0, device=portfolio_returns.device))
+    losses = torch.where(portfolio_returns < threshold, threshold - portfolio_returns, torch.tensor(0.0, device=portfolio_returns.device))
+    omega_ratio = gains.sum() / (losses.sum() + 1e-8)  # Avoid division by zero
+
+    return {
+        "Annual Return": annualized_return.item(),
+        "Volatility": annualized_volatility.item(),
+        "Max Drawdown": max_drawdown.item(),
+        "Sharpe Ratio": sharpe_ratio.item(),
+        "Sortino Ratio": sortino_ratio.item(),
+        "Omega Ratio": omega_ratio.item(),
+        "Calmar Ratio": calmar_ratio.item(),  # Now identical to the standalone portfolio_calmar function
+    }
+
 
 # List of function definitions as strings
 function_definitions = [
@@ -102,36 +119,65 @@ def optimize_portfolio(log_returns):
 """
 ]
 
-function_names = ["Risk Parity Portfolio", "Equal Risk Contribution Portfolio", "Equal Weighted Portfolio",
-"AlphaSharpe Portfolio"]
+function_names = ["Risk Parity Portfolio", "Equal Risk Contribution Portfolio", "Equal Weighted Portfolio", "AlphaSharpe Portfolio"]
 
-def compare_optimization_methods(train, test, function_definitions, risk_free_rate=0.0):
+def compare_optimization_methods_with_improvement(train, test, function_definitions, risk_free_rate=0.0):
     """
     Compiles and compares different portfolio optimization methods given as strings.
+    Also calculates percentage improvement over the Equal Weighted Portfolio (Method_3).
     """
     results = {}
+    baseline_method = None  # Will hold the equal-weighted portfolio results
+    
     for i, func_str in enumerate(function_definitions):
         local_namespace = {}
         try:
             exec(func_str, globals(), local_namespace)  # Compile and execute function
             portfolio_function = local_namespace["optimize_portfolio"]  # Retrieve function
             weights = portfolio_function(train)
-            sharpe_ratio = portfolio_sharpe(test, weights, risk_free_rate)
-            calmar_ratio = portfolio_calmar(test, weights, risk_free_rate)
-            results[f"Method_{i+1}"] = {"Function Name": function_names[i], "Sharpe Ratio": sharpe_ratio.item(), "Calmar Ratio": calmar_ratio.item()}
-        except Exception as e:
-            results[f"Method_{i+1}"] = {"Error": str(e)}
-    
-    return results
+            stats = portfolio_statistics(test, weights, risk_free_rate)
+            stats["Function Name"] = function_names[i]
+            results[f"Method_{i+1}"] = stats
 
-with open('Dataset.pkl', 'rb') as f: Dataset = cPickle.load(f)
+            # Identify the baseline (Equal Weighted Portfolio - Method_3)
+            if function_names[i] == "Equal Weighted Portfolio":
+                baseline_method = stats.copy()
+        except Exception as e:
+            results[f"Method_{i+1}"] = {"Function Name": function_names[i], "Error": str(e)}
+
+    # Convert to DataFrame
+    df_results = pd.DataFrame.from_dict(results, orient="index")
+
+    # Compute percentage improvements over Equal Weighted Portfolio
+    if baseline_method:
+        baseline_values = {key: value for key, value in baseline_method.items() if isinstance(value, (int, float))}
+        for metric in baseline_values.keys():
+            df_results[f"% Improvement ({metric})"] = df_results[metric].apply(
+                lambda x: ((x - baseline_values[metric]) / abs(baseline_values[metric]) * 100) if isinstance(x, (int, float)) else None
+            )
+
+    return df_results
+
+
+
+# Load dataset
+with open('Dataset.pkl', 'rb') as f: 
+    Dataset = cPickle.load(f)
+
 valid_data = np.array(Dataset).T
 valid_data = torch.from_numpy(valid_data).float().cuda()
+
+# Split data into training and testing
 cutoff_index = valid_data.size(1) // 5
 train = valid_data[:, :cutoff_index]
 test = valid_data[:, cutoff_index:]
 
-import pandas as pd
-# Compare optimization methods
-optimized_results = compare_optimization_methods(train, test, function_definitions)
-print(pd.DataFrame(optimized_results))
+# Run the enhanced comparison function
+optimized_results_with_improvement = compare_optimization_methods_with_improvement(train, test, function_definitions)
+
+# Ensure full display of the DataFrame
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", 1000)
+
+print(optimized_results_with_improvement)
