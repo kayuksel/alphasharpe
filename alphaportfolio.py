@@ -3,10 +3,6 @@ import numpy as np
 import pandas as pd
 import _pickle as cPickle
 
-pd.set_option("display.max_rows", None)
-pd.set_option("display.max_columns", None)
-pd.set_option("display.width", 1000)
-
 def portfolio_statistics(log_returns: torch.Tensor, weights: torch.Tensor, risk_free_rate: float = 0.0) -> dict:
     """
     Computes various portfolio performance metrics given log returns and asset weights.
@@ -41,19 +37,12 @@ def portfolio_statistics(log_returns: torch.Tensor, weights: torch.Tensor, risk_
     downside_std = downside_returns.std() + 1e-8  # Avoid division by zero
     sortino_ratio = (annualized_return - risk_free_rate) / downside_std
 
-    # Compute Omega Ratio (ratio of returns above threshold vs below)
-    threshold = risk_free_rate / 252  # Convert annual risk-free rate to daily
-    gains = torch.where(portfolio_returns > threshold, portfolio_returns - threshold, torch.tensor(0.0, device=portfolio_returns.device))
-    losses = torch.where(portfolio_returns < threshold, threshold - portfolio_returns, torch.tensor(0.0, device=portfolio_returns.device))
-    omega_ratio = gains.sum() / (losses.sum() + 1e-8)  # Avoid division by zero
-
     return {
         "Annual Return": annualized_return.item(),
         "Volatility": annualized_volatility.item(),
         "Max Drawdown": max_drawdown.item(),
         "Sharpe Ratio": sharpe_ratio.item(),
         "Sortino Ratio": sortino_ratio.item(),
-        "Omega Ratio": omega_ratio.item(),
         "Calmar Ratio": calmar_ratio.item(),  # Now identical to the standalone portfolio_calmar function
     }
 
