@@ -1,0 +1,522 @@
+[
+    {
+        "name": "regime_shift_detection",
+        "code": "def regime_shift_detection(log_returns: torch.Tensor, window: int=20) -> torch.Tensor:\n    if window <= 1:\n        return torch.zeros_like(log_returns[:, 0])\n    if window > log_returns.shape[-1]:\n        window = log_returns.shape[-1]\n    windows = log_returns.unfold(-1, window, 1)\n    means = windows.mean(dim=-1)\n    current_mean = means[:, -1]\n    past_mean = means[:, :-1].mean(dim=-1)\n    shift = current_mean - past_mean\n    return shift",
+        "importance": 4.024120944453881,
+        "importance_percentage": 4.024120944453881,
+        "rank": 1,
+        "first_appearance": 9
+    },
+    {
+        "name": "volatility_regime_indicator",
+        "code": "def volatility_regime_indicator(log_returns: torch.Tensor, window: int=30) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if window > n:\n        window = n\n    if window <= 1:\n        return torch.zeros_like(log_returns[:, 0])\n    windows = log_returns.unfold(-1, window, 1)\n    vol = windows.std(dim=-1)\n    current_vol = vol[:, -1]\n    past_vol = vol[:, :-1].mean(dim=-1)\n    return (current_vol - past_vol) / (past_vol + 1e-08)",
+        "importance": 3.9867504671309666,
+        "importance_percentage": 3.9867504671309666,
+        "rank": 2,
+        "first_appearance": 8
+    },
+    {
+        "name": "memory_effect_ratio",
+        "code": "def memory_effect_ratio(log_returns: torch.Tensor, short_lag: int=5, long_lag: int=20) -> torch.Tensor:\n    if short_lag >= log_returns.shape[-1]:\n        short_lag = log_returns.shape[-1] - 1\n    if long_lag >= log_returns.shape[-1]:\n        long_lag = log_returns.shape[-1] - 1\n    lead_short = log_returns[:, :-short_lag]\n    lagged_short = log_returns[:, short_lag:]\n    if lead_short.shape[-1] == 0 or lagged_short.shape[-1] == 0:\n        short_autocor = torch.zeros_like(log_returns[:, 0])\n    else:\n        short_autocor = (lead_short * lagged_short).mean(dim=-1)\n    lead_long = log_returns[:, :-long_lag]\n    lagged_long = log_returns[:, long_lag:]\n    if lead_long.shape[-1] == 0 or lagged_long.shape[-1] == 0:\n        long_autocor = torch.zeros_like(log_returns[:, 0])\n    else:\n        long_autocor = (lead_long * lagged_long).mean(dim=-1)\n    ratio = (short_autocor - long_autocor) / (long_autocor + 1e-08)\n    return ratio",
+        "importance": 3.9799558348904363,
+        "importance_percentage": 3.9799558348904363,
+        "rank": 3,
+        "first_appearance": 9
+    },
+    {
+        "name": "information_decay_rate",
+        "code": "def information_decay_rate(log_returns: torch.Tensor) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    alpha = 1.0 - 1.0 / n ** 0.5\n    ema = log_returns.clone()\n    for i in range(1, n):\n        ema[:, i] = alpha * ema[:, i - 1] + (1 - alpha) * log_returns[:, i]\n    delta_ema = (ema[:, -1] - ema[:, 0]).abs()\n    return delta_ema",
+        "importance": 3.7880074740954646,
+        "importance_percentage": 3.7880074740954646,
+        "rank": 4,
+        "first_appearance": 10
+    },
+    {
+        "name": "momentum_driven_risk",
+        "code": "def momentum_driven_risk(log_returns: torch.Tensor, lag: int=1) -> torch.Tensor:\n    lead_returns = log_returns[:, lag:]\n    lag_returns = log_returns[:, :-lag]\n    autocov = (lead_returns * lag_returns).mean(dim=-1)\n    return autocov",
+        "importance": 3.590963139120095,
+        "importance_percentage": 3.590963139120095,
+        "rank": 5,
+        "first_appearance": 3
+    },
+    {
+        "name": "nonlinear_autocorrelation",
+        "code": "def nonlinear_autocorrelation(log_returns: torch.Tensor, power: int=3) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    if n == 1:\n        return log_returns[:, 0]\n    lead = log_returns[:, :-1].pow(power)\n    lagged = log_returns[:, 1:].pow(power)\n    autocor = (lead * lagged).mean(dim=-1)\n    return autocor",
+        "importance": 3.466961100730423,
+        "importance_percentage": 3.466961100730423,
+        "rank": 6,
+        "first_appearance": 10
+    },
+    {
+        "name": "return_impact",
+        "code": "def return_impact(log_returns: torch.Tensor) -> torch.Tensor:\n    mean = log_returns.mean(dim=-1, keepdim=True)\n    deviation = (log_returns - mean).abs()\n    return deviation.mean(dim=-1) / (log_returns.abs().mean(dim=-1) + 1e-08)",
+        "importance": 3.3327671139799557,
+        "importance_percentage": 3.3327671139799557,
+        "rank": 7,
+        "first_appearance": 7
+    },
+    {
+        "name": "extreme_return_ratio",
+        "code": "def extreme_return_ratio(log_returns: torch.Tensor) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    k = int(n * 0.1)\n    if k == 0:\n        k = 1\n    positive = torch.topk(log_returns, k, dim=-1)[0]\n    negative = torch.topk(-log_returns, k, dim=-1)[0]\n    ratio = positive.sum(dim=-1) / (negative.abs().sum(dim=-1) + 1e-08)\n    return ratio",
+        "importance": 3.280108714115849,
+        "importance_percentage": 3.280108714115849,
+        "rank": 8,
+        "first_appearance": 5
+    },
+    {
+        "name": "average_autocorrelation",
+        "code": "def average_autocorrelation(log_returns: torch.Tensor, lags: int=10) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    if lags >= n:\n        lags = n - 1\n    means = log_returns.mean(dim=-1, keepdim=True)\n    centered = (log_returns - means) / (torch.std(log_returns, dim=-1, keepdim=True) + 1e-08)\n    autocors = []\n    for lag in range(1, lags + 1):\n        if lag >= n:\n            break\n        lead = centered[:, :-lag]\n        lagged = centered[:, lag:]\n        if lead.shape[-1] == 0 or lagged.shape[-1] == 0:\n            continue\n        autocor = (lead * lagged).mean(dim=-1)\n        autocors.append(autocor)\n    if not autocors:\n        return torch.zeros_like(means.squeeze())\n    return torch.stack(autocors).mean(dim=0)",
+        "importance": 3.278410056055716,
+        "importance_percentage": 3.278410056055716,
+        "rank": 9,
+        "first_appearance": 4
+    },
+    {
+        "name": "risk_adjusted_momentum",
+        "code": "def risk_adjusted_momentum(log_returns: torch.Tensor, window: int=20) -> torch.Tensor:\n    if window == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    n = log_returns.shape[-1]\n    if window > n:\n        window = n\n    current_returns = log_returns[:, -1]\n    past_returns = log_returns[:, :-window]\n    momentum = current_returns - past_returns.mean(dim=-1)\n    volatility = past_returns.std(dim=-1)\n    return momentum / (volatility + 1e-08)",
+        "importance": 3.252930185153729,
+        "importance_percentage": 3.252930185153729,
+        "rank": 10,
+        "first_appearance": 8
+    },
+    {
+        "name": "asymmetric_volatility_contribution",
+        "code": "def asymmetric_volatility_contribution(log_returns: torch.Tensor) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    alpha_pos = 0.1\n    alpha_neg = 0.2\n    vol_pos = log_returns.clone()\n    vol_neg = log_returns.clone()\n    for i in range(1, n):\n        vol_pos[:, i] = alpha_pos * vol_pos[:, i - 1] + (1 - alpha_pos) * (log_returns[:, i] * (log_returns[:, i] > 0).float())\n        vol_neg[:, i] = alpha_neg * vol_neg[:, i - 1] + (1 - alpha_neg) * (log_returns[:, i] * (log_returns[:, i] < 0).float()).abs()\n    return vol_pos[:, -1] - vol_neg[:, -1]",
+        "importance": 3.1170375403431287,
+        "importance_percentage": 3.1170375403431287,
+        "rank": 11,
+        "first_appearance": 11
+    },
+    {
+        "name": "sum_",
+        "code": "\ndef sum_(log_returns: torch.Tensor) -> torch.Tensor:\n    return log_returns.sum(dim=-1)\n",
+        "importance": 3.0779684049600813,
+        "importance_percentage": 3.0779684049600813,
+        "rank": 12,
+        "first_appearance": 1
+    },
+    {
+        "name": "max_drawdown",
+        "code": "def max_drawdown(log_returns: torch.Tensor) -> torch.Tensor:\n    if log_returns.shape[-1] == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    cumulative = torch.cumsum(log_returns, dim=-1)\n    max_so_far = torch.cummax(cumulative, dim=-1).values\n    drawdown = cumulative - max_so_far\n    max_dd = drawdown.min(dim=-1).values\n    return max_dd",
+        "importance": 3.0422965856972994,
+        "importance_percentage": 3.0422965856972994,
+        "rank": 13,
+        "first_appearance": 4
+    },
+    {
+        "name": "tail_spread",
+        "code": "def tail_spread(log_returns: torch.Tensor, threshold: float=0.05) -> torch.Tensor:\n    if threshold <= 0 or threshold >= 1:\n        threshold = 0.05\n    n = log_returns.shape[-1]\n    lower = log_returns.topk(int(threshold * n), dim=-1, largest=False)[0]\n    upper = log_returns.topk(int((1 - threshold) * n), dim=-1, largest=True)[0]\n    lower_mean = lower.mean(dim=-1)\n    upper_mean = upper.mean(dim=-1)\n    spread = upper_mean - lower_mean\n    vol = log_returns.std(dim=-1)\n    scaled_spread = spread / (vol + 1e-08)\n    return scaled_spread",
+        "importance": 2.9981314761338544,
+        "importance_percentage": 2.9981314761338544,
+        "rank": 14,
+        "first_appearance": 6
+    },
+    {
+        "name": "kurtosis",
+        "code": "def kurtosis(log_returns: torch.Tensor) -> torch.Tensor:\n    mean = torch.mean(log_returns, dim=-1, keepdim=True)\n    standardized = (log_returns - mean) / torch.std(log_returns, dim=-1, keepdim=True)\n    kurtosis = torch.mean(torch.pow(standardized, 4), dim=-1) - 3\n    return kurtosis",
+        "importance": 2.9165958892474944,
+        "importance_percentage": 2.9165958892474944,
+        "rank": 15,
+        "first_appearance": 2
+    },
+    {
+        "name": "skewness",
+        "code": "def skewness(log_returns: torch.Tensor) -> torch.Tensor:\n    mean = log_returns.mean(dim=-1, keepdim=True)\n    standardized = (log_returns - mean) / (torch.std(log_returns, dim=-1, keepdim=True) + 1e-08)\n    skew = torch.mean(standardized ** 3, dim=-1)\n    return skew",
+        "importance": 2.887718702225242,
+        "importance_percentage": 2.887718702225242,
+        "rank": 16,
+        "first_appearance": 4
+    },
+    {
+        "name": "upside_potential_ratio",
+        "code": "def upside_potential_ratio(log_returns: torch.Tensor) -> torch.Tensor:\n    positive_returns = log_returns * (log_returns > 0).float()\n    negative_returns = log_returns * (log_returns < 0).float()\n    mean_positive = positive_returns.mean(dim=-1)\n    mean_negative = negative_returns.abs().mean(dim=-1)\n    ratio = mean_positive / (mean_negative + 1e-08)\n    return ratio",
+        "importance": 2.87243077968405,
+        "importance_percentage": 2.87243077968405,
+        "rank": 17,
+        "first_appearance": 3
+    },
+    {
+        "name": "asymmetric_tail_risk",
+        "code": "def asymmetric_tail_risk(log_returns: torch.Tensor, threshold: float=0.1) -> torch.Tensor:\n    lower = log_returns.topk(int(threshold * log_returns.shape[-1]), dim=-1, largest=False)[0]\n    upper = log_returns.topk(int((1 - threshold) * log_returns.shape[-1]), dim=-1, largest=True)[0]\n    lower_mean = lower.mean(dim=-1)\n    upper_mean = upper.mean(dim=-1)\n    spread = upper_mean - lower_mean\n    vol = log_returns.std(dim=-1)\n    scaled_spread = spread / (vol + 1e-08)\n    return scaled_spread",
+        "importance": 2.801087141158485,
+        "importance_percentage": 2.801087141158485,
+        "rank": 18,
+        "first_appearance": 9
+    },
+    {
+        "name": "turnover_based_liquidity_risk",
+        "code": "def turnover_based_liquidity_risk(log_returns: torch.Tensor) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    turnover = log_returns.abs().sum(dim=-1)\n    vol = log_returns.std(dim=-1)\n    return turnover / (vol + 1e-08)",
+        "importance": 2.794292508917955,
+        "importance_percentage": 2.794292508917955,
+        "rank": 19,
+        "first_appearance": 10
+    },
+    {
+        "name": "zero_return_frequency",
+        "code": "def zero_return_frequency(log_returns: torch.Tensor, threshold: float=0.0001) -> torch.Tensor:\n    near_zero = (log_returns.abs() < threshold).float()\n    return near_zero.sum(dim=-1)",
+        "importance": 2.780703244436895,
+        "importance_percentage": 2.780703244436895,
+        "rank": 20,
+        "first_appearance": 4
+    },
+    {
+        "name": "autocovariance_decay",
+        "code": "def autocovariance_decay(log_returns: torch.Tensor, lags: int=10) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    autocovs = []\n    for lag in range(1, lags + 1):\n        if lag >= n:\n            break\n        lead = log_returns[:, :-lag]\n        lagged = log_returns[:, lag:]\n        if lead.shape[-1] == 0 or lagged.shape[-1] == 0:\n            continue\n        autocov = (lead * lagged).mean(dim=-1)\n        autocovs.append(autocov)\n    if not autocovs:\n        return torch.zeros_like(log_returns[:, 0])\n    return torch.stack(autocovs).mean(dim=0)",
+        "importance": 2.7280448445727874,
+        "importance_percentage": 2.7280448445727874,
+        "rank": 21,
+        "first_appearance": 7
+    },
+    {
+        "name": "volatility_of_volatility",
+        "code": "def volatility_of_volatility(log_returns: torch.Tensor, window: int=30) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if window > n:\n        window = n\n    if window <= 1:\n        return torch.zeros_like(log_returns[:, 0])\n    windows = log_returns.unfold(-1, window, 1)\n    vol = windows.std(dim=-1)\n    vol_vol = vol.std(dim=-1)\n    return vol_vol",
+        "importance": 2.6600985221674875,
+        "importance_percentage": 2.6600985221674875,
+        "rank": 22,
+        "first_appearance": 4
+    },
+    {
+        "name": "minimum",
+        "code": "\ndef minimum(log_returns: torch.Tensor) -> torch.Tensor:\n    return log_returns.min(dim=-1).values\n",
+        "importance": 2.561576354679803,
+        "importance_percentage": 2.561576354679803,
+        "rank": 23,
+        "first_appearance": 1
+    },
+    {
+        "name": "asymmetric_volatility",
+        "code": "def asymmetric_volatility(log_returns: torch.Tensor) -> torch.Tensor:\n    mean = log_returns.mean(dim=-1, keepdim=True)\n    pos_vol = log_returns.where(log_returns > mean, torch.zeros_like(log_returns)).std(dim=-1)\n    neg_vol = log_returns.where(log_returns < mean, torch.zeros_like(log_returns)).std(dim=-1)\n    return pos_vol / (neg_vol + 1e-08)",
+        "importance": 2.5089179548156957,
+        "importance_percentage": 2.5089179548156957,
+        "rank": 24,
+        "first_appearance": 7
+    },
+    {
+        "name": "realized_skewness_kurtosis_ratio",
+        "code": "def realized_skewness_kurtosis_ratio(log_returns: torch.Tensor) -> torch.Tensor:\n    if log_returns.shape[-1] == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    mean = log_returns.mean(dim=-1, keepdim=True)\n    standardized = (log_returns - mean) / (log_returns.std(dim=-1, keepdim=True) + 1e-08)\n    skew = (standardized ** 3).mean(dim=-1)\n    kurtosis = (standardized ** 4).mean(dim=-1) - 3\n    return skew / (kurtosis + 1e-08)",
+        "importance": 2.349244097163241,
+        "importance_percentage": 2.349244097163241,
+        "rank": 25,
+        "first_appearance": 11
+    },
+    {
+        "name": "maximum",
+        "code": "\ndef maximum(log_returns: torch.Tensor) -> torch.Tensor:\n    return log_returns.max(dim=-1).values\n",
+        "importance": 2.277900458637676,
+        "importance_percentage": 2.277900458637676,
+        "rank": 26,
+        "first_appearance": 1
+    },
+    {
+        "name": "median",
+        "code": "\ndef median(log_returns: torch.Tensor) -> torch.Tensor:\n    return log_returns.median(dim=-1).values\n",
+        "importance": 2.153898420248004,
+        "importance_percentage": 2.153898420248004,
+        "rank": 27,
+        "first_appearance": 1
+    },
+    {
+        "name": "range_",
+        "code": "\ndef range_(log_returns: torch.Tensor) -> torch.Tensor:\n    return maximum(log_returns) - minimum(log_returns)\n",
+        "importance": 2.0502802785799217,
+        "importance_percentage": 2.0502802785799217,
+        "rank": 28,
+        "first_appearance": 1
+    },
+    {
+        "name": "quantile_range",
+        "code": "def quantile_range(log_returns: torch.Tensor, window: int=30) -> torch.Tensor:\n    if window <= 0:\n        window = 1\n    n = log_returns.shape[-1]\n    if window > n:\n        window = n\n    windows = log_returns.unfold(-1, window, 1)\n    lower = windows.quantile(0.25, dim=-1)\n    upper = windows.quantile(0.75, dim=-1)\n    q_range = (upper - lower).mean(dim=-1)\n    return q_range",
+        "importance": 1.9670460336334294,
+        "importance_percentage": 1.9670460336334294,
+        "rank": 29,
+        "first_appearance": 6
+    },
+    {
+        "name": "mad",
+        "code": "\ndef mad(log_returns: torch.Tensor) -> torch.Tensor:\n    mean_val = log_returns.mean(dim=-1, keepdim=True)\n    return (log_returns - mean_val).abs().mean(dim=-1)\n",
+        "importance": 1.7886869373195176,
+        "importance_percentage": 1.7886869373195176,
+        "rank": 30,
+        "first_appearance": 1
+    },
+    {
+        "name": "composite_risk_measure",
+        "code": "def composite_risk_measure(log_returns: torch.Tensor) -> torch.Tensor:\n    mean = log_returns.mean(dim=-1, keepdim=True)\n    volatility = log_returns.std(dim=-1, keepdim=True)\n    skew = torch.mean((log_returns - mean) ** 3, dim=-1, keepdim=True) / (volatility ** 3 + 1e-08)\n    kurtosis = torch.mean((log_returns - mean) ** 4, dim=-1, keepdim=True) / (volatility ** 4 + 1e-08)\n    return torch.cat([volatility, skew, kurtosis], dim=-1).mean(dim=-1)",
+        "importance": 1.7462204858162051,
+        "importance_percentage": 1.7462204858162051,
+        "rank": 31,
+        "first_appearance": 8
+    },
+    {
+        "name": "mean",
+        "code": "\ndef mean(log_returns: torch.Tensor) -> torch.Tensor:\n    return log_returns.mean(dim=-1)\n",
+        "importance": 1.5831493120434854,
+        "importance_percentage": 1.5831493120434854,
+        "rank": 32,
+        "first_appearance": 1
+    },
+    {
+        "name": "hill_tail_risk_estimator",
+        "code": "def hill_tail_risk_estimator(log_returns: torch.Tensor) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    k = max(int(n * 0.1), 1)\n    (sorted_returns, _) = log_returns.sort(dim=-1)\n    top_returns = sorted_returns[:, -k:]\n    mean_top = top_returns.mean(dim=-1)\n    hill_estimator = mean_top * k\n    return hill_estimator",
+        "importance": 1.3674197384066586,
+        "importance_percentage": 1.3674197384066586,
+        "rank": 33,
+        "first_appearance": 11
+    },
+    {
+        "name": "std",
+        "code": "\ndef std(log_returns: torch.Tensor, unbiased: bool = False) -> torch.Tensor:\n    return torch.std(log_returns, dim=-1, unbiased=unbiased)\n",
+        "importance": 1.2281297774757942,
+        "importance_percentage": 1.2281297774757942,
+        "rank": 34,
+        "first_appearance": 1
+    },
+    {
+        "name": "autocorrelation_profile",
+        "code": "def autocorrelation_profile(log_returns: torch.Tensor, lags: int=10) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    if lags >= n:\n        lags = n - 1\n    autocors = []\n    for lag in range(1, lags + 1):\n        if lag >= n:\n            break\n        lead = log_returns[:, :-lag]\n        lagged = log_returns[:, lag:]\n        if lead.shape[-1] == 0 or lagged.shape[-1] == 0:\n            continue\n        current_autocor = (lead * lagged).mean(dim=-1)\n        autocors.append(current_autocor)\n    if not autocors:\n        return torch.zeros_like(log_returns[:, 0])\n    return torch.stack(autocors).mean(dim=0)",
+        "importance": 1.2213351452352643,
+        "importance_percentage": 1.2213351452352643,
+        "rank": 35,
+        "first_appearance": 8
+    },
+    {
+        "name": "tail_spread_ratio",
+        "code": "def tail_spread_ratio(log_returns: torch.Tensor) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    lower = log_returns.topk(int(0.05 * n), dim=-1, largest=False)[0]\n    upper = log_returns.topk(int(0.95 * n), dim=-1, largest=True)[0]\n    lower_mean = lower.mean(dim=-1)\n    upper_mean = upper.mean(dim=-1)\n    spread = upper_mean - lower_mean\n    return spread",
+        "importance": 1.1397995583489042,
+        "importance_percentage": 1.1397995583489042,
+        "rank": 36,
+        "first_appearance": 12
+    },
+    {
+        "name": "realized_semivariance",
+        "code": "def realized_semivariance(log_returns: torch.Tensor) -> torch.Tensor:\n    mean = log_returns.mean(dim=-1, keepdim=True)\n    semivariance = (log_returns - mean).where(log_returns < mean, torch.zeros_like(log_returns)).pow(2).mean(dim=-1)\n    return semivariance",
+        "importance": 0.9750297265160524,
+        "importance_percentage": 0.9750297265160524,
+        "rank": 37,
+        "first_appearance": 3
+    },
+    {
+        "name": "high_frequency_impact",
+        "code": "def high_frequency_impact(log_returns: torch.Tensor, window: int=5) -> torch.Tensor:\n    if window <= 1:\n        return torch.zeros_like(log_returns[:, 0])\n    if window > log_returns.shape[-1]:\n        window = log_returns.shape[-1]\n    windows = log_returns.unfold(-1, window, 1)\n    var = windows.var(dim=-1)\n    hfi = var.mean(dim=-1)\n    return hfi",
+        "importance": 0.8272464752845252,
+        "importance_percentage": 0.8272464752845252,
+        "rank": 38,
+        "first_appearance": 9
+    },
+    {
+        "name": "absolute_sum",
+        "code": "\ndef absolute_sum(log_returns: torch.Tensor) -> torch.Tensor:\n    return log_returns.abs().sum(dim=-1)\n",
+        "importance": 0.8085612366230679,
+        "importance_percentage": 0.8085612366230679,
+        "rank": 39,
+        "first_appearance": 1
+    },
+    {
+        "name": "variance",
+        "code": "\ndef variance(log_returns: torch.Tensor, unbiased: bool = False) -> torch.Tensor:\n    return log_returns.var(dim=-1, unbiased=unbiased)\n",
+        "importance": 0.552063869543061,
+        "importance_percentage": 0.552063869543061,
+        "rank": 40,
+        "first_appearance": 1
+    },
+    {
+        "name": "tail_risk_asymmetry",
+        "code": "def tail_risk_asymmetry(log_returns: torch.Tensor, threshold: float=0.05) -> torch.Tensor:\n    if threshold <= 0 or threshold >= 1:\n        threshold = 0.05\n    n = log_returns.shape[-1]\n    lower = log_returns.topk(int(threshold * n), dim=-1, largest=False)[0]\n    upper = log_returns.topk(int((1 - threshold) * n), dim=-1, largest=True)[0]\n    lower_mean = lower.mean(dim=-1)\n    upper_mean = upper.mean(dim=-1)\n    spread = upper_mean - lower_mean\n    return spread / (spread.abs() + 1e-08)",
+        "importance": 0.23611347035841684,
+        "importance_percentage": 0.23611347035841684,
+        "rank": 41,
+        "first_appearance": 8
+    },
+    {
+        "name": "hurst_exponent",
+        "code": "def hurst_exponent(log_returns: torch.Tensor) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    rs = (log_returns.mean(dim=-1, keepdim=True) - log_returns).sum(dim=-1)\n    cum_diffs = torch.cumsum(log_returns, dim=-1)\n    cum_diffs_mean = cum_diffs.mean(dim=-1, keepdim=True)\n    cum_diffs_dev = cum_diffs - cum_diffs_mean\n    abs_cum_diffs = torch.abs(cum_diffs_dev)\n    w = torch.mean(abs_cum_diffs, dim=-1)\n    h = 0.5 * torch.log(torch.mean(torch.pow(w, 2.0) / torch.pow(w.mean(dim=-1, keepdim=True), 2.0), dim=-1))\n    return h",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 2
+    },
+    {
+        "name": "conditional_value_at_risk",
+        "code": "def conditional_value_at_risk(log_returns: torch.Tensor, alpha: float=0.95) -> torch.Tensor:\n    (sorted_returns, _) = torch.sort(log_returns, dim=-1)\n    var = torch.index_select(sorted_returns, dim=-1, index=torchLongTensor([int(alpha * len(sorted_returns))]))\n    cvar = torch.mean(var)\n    return cvar",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 2
+    },
+    {
+        "name": "tail_risk",
+        "code": "def tail_risk(log_returns: torch.Tensor, alpha: float=0.95) -> torch.Tensor:\n    (sorted_returns, _) = torch.sort(log_returns, dim=-1)\n    tail_length = int((1 - alpha) * len(sorted_returns))\n    if tail_length == 0:\n        return torch.mean(sorted_returns)\n    tail = sorted_returns[:, :tail_length]\n    return torch.mean(tail)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 2
+    },
+    {
+        "name": "garch_volatility",
+        "code": "def garch_volatility(log_returns: torch.Tensor, alpha: float=0.94, beta: float=0.05, burn_in: int=50) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    var = torch.zeros_like(log_returns)\n    var[:, burn_in] = torch.var(log_returns[:, :burn_in], dim=-1)\n    for t in range(burn_in, n):\n        var[:, t] = alpha * log_returns[:, t - 1] ** 2 + beta * var[:, t - 1]\n    return torch.sqrt(var)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 2
+    },
+    {
+        "name": "rolling_sharpe_ratio",
+        "code": "def rolling_sharpe_ratio(log_returns: torch.Tensor, window: int=30) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    means = log_returns.rolling(window).mean()\n    stds = log_returns.rolling(window).std()\n    sharpes = (means / (stds + 1e-08))[:, -window:]\n    return sharpes.mean(dim=-1)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 3
+    },
+    {
+        "name": "volatility_clustering",
+        "code": "def volatility_clustering(log_returns: torch.Tensor, window: int=30) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    squared_returns = (log_returns - log_returns.rolling(window).mean()) ** 2\n    clustering = squared_returns.rolling(window).mean()[:, -window:]\n    return clustering.mean(dim=-1)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 3
+    },
+    {
+        "name": "return_reversal",
+        "code": "def return_reversal(log_returns: torch.Tensor) -> torch.Tensor:\n    shifted = torch.cat([log_returns, log_returns[:, :-1]], dim=-1)\n    product = log_returns * shifted[:, :-log_returns.shape[-1]]\n    return product.mean(dim=-1) / (log_returns.std(dim=-1, unbiased=False) + 1e-08)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 5
+    },
+    {
+        "name": "windowed_correlation",
+        "code": "def windowed_correlation(log_returns: torch.Tensor) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n <= 1:\n        return torch.zeros_like(log_returns[:, 0])\n    window = n // 2\n    windows_past = log_returns.unfold(-1, window, 1)\n    windows_future = log_returns[:, :, None, :].unfold(-1, window, 1)\n    covariance = torch.mean(windows_past * windows_future, dim=(-2, -1))\n    past_var = torch.var(windows_past, dim=-1, unbiased=False)\n    future_var = torch.var(windows_future, dim=-1, unbiased=False)\n    corr = covariance / (past_var * future_var + 1e-08).sqrt()\n    return corr.mean(dim=-1)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 5
+    },
+    {
+        "name": "timing_of_reversals",
+        "code": "def timing_of_reversals(log_returns: torch.Tensor) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n <= 1:\n        return torch.zeros_like(log_returns[:, 0])\n    diffs = torch.diff(torch.arange(n), device=log_returns.device).float()\n    high_to_low = (log_returns[:, :-1] > log_returns[:, 1:]).float() * diffs[:, None]\n    low_to_high = (log_returns[:, :-1] < log_returns[:, 1:]).float() * diffs[:, None]\n    total_time = high_to_low.sum(dim=-1) + low_to_high.sum(dim=-1)\n    return total_time / (n - 1)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 5
+    },
+    {
+        "name": "variance_of_variances",
+        "code": "def variance_of_variances(log_returns: torch.Tensor) -> torch.Tensor:\n    window_size = log_returns.shape[-1] // 3\n    if window_size <= 1:\n        return torch.zeros_like(log_returns[:, 0])\n    windows = log_returns.unfold(-1, window_size, 1)\n    variances = torch.var(windows, dim=-1, unbiased=False)\n    return torch.var(variances, unbiased=False)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 5
+    },
+    {
+        "name": "temporal_correlation",
+        "code": "def temporal_correlation(log_returns: torch.Tensor, window: int=20, lag: int=5) -> torch.Tensor:\n    if window <= 0:\n        window = 1\n    if lag >= window:\n        lag = window - 1\n    n = log_returns.shape[-1]\n    if window > n:\n        window = n\n    if window <= 1:\n        return torch.zeros_like(log_returns[:, 0])\n    means = log_returns.mean(dim=-1, keepdim=True)\n    centered = log_returns - means\n    windows = centered.unfold(-1, window, 1)\n    corr_coeff = []\n    for i in range(lag):\n        if i + window > n:\n            break\n        lead = windows[:, i, :]\n        lagged = windows[:, i + lag, :] if i + lag < windows.size(1) else windows[:, -1, :]\n        if lead.shape[-1] != lagged.shape[-1]:\n            continue\n        cov = (lead * lagged).mean(dim=-1)\n        var_lead = lead.var(dim=-1)\n        var_lagged = lagged.var(dim=-1)\n        with torch.no_grad():\n            if var_lead.mean() == 0 or var_lagged.mean() == 0:\n                corr = torch.zeros_like(cov)\n            else:\n                corr = cov / (torch.sqrt(var_lead * var_lagged) + 1e-08)\n        corr_coeff.append(corr.mean(dim=-1))\n    if not corr_coeff:\n        return torch.zeros_like(means.squeeze())\n    return torch.stack(corr_coeff).mean(dim=0)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 6
+    },
+    {
+        "name": "momentum_reversal_ratio",
+        "code": "def momentum_reversal_ratio(log_returns: torch.Tensor, short_window: int=10, long_window: int=30) -> torch.Tensor:\n    if short_window <= 0:\n        short_window = 1\n    if long_window <= 0:\n        long_window = 1\n    n = log_returns.shape[-1]\n    if short_window > n:\n        short_window = n\n    if long_window > n:\n        long_window = n\n    short_returns = log_returns.unfold(-1, short_window, 1).mean(dim=-1)\n    long_returns = log_returns.unfold(-1, long_window, 1).mean(dim=-1)\n    ratio = (short_returns - long_returns) / (long_returns + 1e-08)\n    return ratio.mean(dim=-1)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 6
+    },
+    {
+        "name": "wavelet_variance",
+        "code": "def wavelet_variance(log_returns: torch.Tensor, level: int=2) -> torch.Tensor:\n    if level <= 0:\n        level = 1\n    with torch.no_grad():\n        n = log_returns.shape[-1]\n        if n <= 1:\n            return torch.zeros_like(log_returns[:, 0])\n        wavelet = torch.tensor([1, -1], dtype=torch.float) / torch.sqrt(torch.tensor(2, dtype=torch.float))\n        w = log_returns.clone()\n        for _ in range(level):\n            w = torch.cat([w[:, :-1], w[:, 1:]], dim=-1)\n            w = torch.mv(orthonormal_matrix(w))\n        var = w.var(dim=-1)\n    return var",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 6
+    },
+    {
+        "name": "liquidity_adjusted_volatility",
+        "code": "def liquidity_adjusted_volatility(log_returns: torch.Tensor, volumes: torch.Tensor) -> torch.Tensor:\n    if 'volumes' not in locals():\n        volumes = torch.ones_like(log_returns)\n    vol = log_returns.std(dim=-1, keepdim=True)\n    liquidity = volumes.mean(dim=-1, keepdim=True)\n    return vol / (liquidity + 1e-08)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 7
+    },
+    {
+        "name": "weighted_realized_volatility",
+        "code": "def weighted_realized_volatility(log_returns: torch.Tensor, window: int=30) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if window > n:\n        window = n\n    weights = torch.arange(1, window + 1, dtype=torch.float32, device=log_returns.device)\n    weights = weights / weights.sum()\n    windows = log_returns.unfold(-1, window, 1)\n    vol = windows.std(dim=-1)\n    wvol = (vol * weights).sum(dim=-1)\n    return wvol",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 7
+    },
+    {
+        "name": "conditional_autocorrelation_dynamics",
+        "code": "def conditional_autocorrelation_dynamics(log_returns: torch.Tensor, lags: int=5, window: int=20) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if window > n:\n        window = n\n    if window <= 1:\n        return torch.zeros_like(log_returns[:, 0])\n    if lags >= window:\n        lags = window - 1\n    autocors = []\n    for lag in range(1, lags + 1):\n        lead = log_returns[:, :-lag]\n        lagged = log_returns[:, lag:]\n        if lead.shape[-1] == 0 or lagged.shape[-1] == 0:\n            continue\n        autocor = (lead * lagged).mean(dim=-1)\n        autocors.append(autocor)\n    if not autocors:\n        return torch.zeros_like(log_returns[:, 0])\n    autocor_series = torch.stack(autocors, dim=-1)\n    moving_autocor = autocor_series.unfold(-1, window, 1).mean(dim=-1)\n    cad = moving_autocor[:, -1] - moving_autocor[:, :-1].mean(dim=-1)\n    return cad",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 9
+    },
+    {
+        "name": "momentum_neutral_risk",
+        "code": "def momentum_neutral_risk(log_returns: torch.Tensor) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    (u, s, v) = torch.linalg.svd(log_returns)\n    pc = u[:, :, None] * s[:, None, None] * v[:, None, :]\n    pc = pc.squeeze(-1)\n    X = pc\n    XTX_inv = torch.inverse(torch.mm(X.T, X)) if X.shape[1] <= X.shape[0] else torch.pinverse(X)\n    beta = torch.mm(torch.mm(XTX_inv, X.T), log_returns.T).T\n    residuals = log_returns - torch.mm(X, beta)\n    return residuals.std(dim=-1)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 10
+    },
+    {
+        "name": "time_scale_stretching",
+        "code": "def time_scale_stretching(log_returns: torch.Tensor) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    scales = [2, 4, 8, 16]\n    correlations = []\n    for scale in scales:\n        if scale >= n:\n            break\n        resampled = log_returns[:, ::scale]\n        correlations.append(torch.corr(resampled, log_returns, dim=-1).mean(dim=-1))\n    if not correlations:\n        return torch.zeros_like(log_returns[:, 0])\n    return torch.stack(correlations).mean(dim=0)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 10
+    },
+    {
+        "name": "power_law_autocorrelation_decay",
+        "code": "def power_law_autocorrelation_decay(log_returns: torch.Tensor) -> torch.Tensor:\n    n = log_returns.shape[-1]\n    if n == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    max_lag = min(100, n // 2)\n    lags = torch.arange(1, max_lag + 1, dtype=torch.float32)\n    means = log_returns.mean(dim=-1, keepdim=True)\n    centered = (log_returns - means) / (log_returns.std(dim=-1, keepdim=True) + 1e-08)\n    autocors = []\n    for lag in range(1, max_lag + 1):\n        if lag >= n:\n            continue\n        lead = centered[:, :-lag]\n        lagged = centered[:, lag:]\n        if lead.shape[-1] == 0 or lagged.shape[-1] == 0:\n            continue\n        autocor = (lead * lagged).mean(dim=-1)\n        autocors.append(autocor)\n    if not autocors:\n        return torch.zeros_like(means.squeeze())\n    autocor_matrix = torch.stack(autocors)\n    decay_rate = (autocor_matrix.log().mean(dim=0) / lags[None, :].to(log_returns.device)).mean()\n    return decay_rate",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 11
+    },
+    {
+        "name": "leverage_effect_risk_indicator",
+        "code": "def leverage_effect_risk_indicator(log_returns: torch.Tensor, window: int=20) -> torch.Tensor:\n    if window <= 0:\n        return torch.zeros_like(log_returns[:, 0])\n    n = log_returns.shape[-1]\n    if window > n:\n        window = n\n    if window <= 1:\n        return torch.zeros_like(log_returns[:, 0])\n    windows = log_returns.unfold(-1, window, 1)\n    negative_returns = (windows[:, :, -1] < 0).float()\n    current_returns = windows[:, :, 0]\n    lead_vols = current_returns.std(dim=-1)\n    neg_corr = (negative_returns.mean(dim=-1) * lead_vols).mean(dim=-1)\n    return neg_corr",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 11
+    },
+    {
+        "name": "positive_return_ratio",
+        "code": "def positive_return_ratio(log_returns: torch.Tensor, window: int=20) -> torch.Tensor:\n    if window <= 0:\n        window = 1\n    n = log_returns.shape[-1]\n    if window > n:\n        window = n\n    windows = log_returns.unfold(-1, window, 1)\n    pos_count = (windows > 0).sum(dim=-1)\n    return pos_count / window",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 12
+    },
+    {
+        "name": "tail_recovery_indicator",
+        "code": "def tail_recovery_indicator(log_returns: torch.Tensor, window: int=20) -> torch.Tensor:\n    if window <= 0:\n        window = 1\n    n = log_returns.shape[-1]\n    if window > n:\n        window = n\n    windows = log_returns.unfold(-1, window, 1)\n    tail_events = (windows < windows.mean(dim=-1, keepdim=True) - windows.std(dim=-1, keepdim=True) * 2).float()\n    next_returns = log_returns[:, window:]\n    if next_returns.shape[-1] == 0:\n        return torch.zeros_like(log_returns[:, 0])\n    recovery = (next_returns * tail_events.mean(dim=-1)).mean(dim=-1)\n    return recovery",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 12
+    },
+    {
+        "name": "volatility_change_indicator",
+        "code": "def volatility_change_indicator(log_returns: torch.Tensor, short_window: int=10, long_window: int=30) -> torch.Tensor:\n    if short_window <= 0:\n        short_window = 1\n    if long_window <= 0:\n        long_window = 1\n    n = log_returns.shape[-1]\n    if short_window > n:\n        short_window = n\n    if long_window > n:\n        long_window = n\n    short_vol = log_returns.unfold(-1, short_window, 1).std(dim=-1)\n    long_vol = log_returns.unfold(-1, long_window, 1).std(dim=-1)\n    if short_vol.shape[-1] != long_vol.shape[-1]:\n        long_vol = long_vol[:, :short_vol.shape[-1]]\n    return (short_vol - long_vol).mean(dim=-1)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 12
+    },
+    {
+        "name": "volatility_persistence_ratio",
+        "code": "def volatility_persistence_ratio(log_returns: torch.Tensor, window: int=20) -> torch.Tensor:\n    if window <= 0:\n        window = 1\n    n = log_returns.shape[-1]\n    if window > n:\n        window = n\n    windows = log_returns.unfold(-1, window, 1)\n    current_vol = windows.std(dim=-1)\n    past_vol = windows[:, :-1].mean(dim=-1)\n    persistence = (current_vol - past_vol) / (past_vol + 1e-08)\n    return persistence.mean(dim=-1)",
+        "importance": 0,
+        "importance_percentage": 0,
+        "rank": Infinity,
+        "first_appearance": 12
+    }
+]
