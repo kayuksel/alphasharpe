@@ -117,8 +117,40 @@ def alphasharpe_metric(raw_log_returns: np.ndarray, r_min: float, epsilon: float
     forecasted_volatility = forecast_volatility_factor * recent_std
     
     # Combine components into a single metric.
-    metric = np.exp(mean_log_excess_return) / (std_excess_log_returns + downside_risk + forecasted_volatility + epsilon)
-    return metric
+    return np.exp(mean_log_excess_return) / (std_excess_log_returns + downside_risk + forecasted_volatility + epsilon)
+
+def betasharpe_metric(log_returns: np.ndarray, r_min: float) -> np.ndarray:
+    """
+    Compute an alternative risk-adjusted metric (BetaSharpe) that incorporates 
+    decayed returns, rolling volatility, skewness, kurtosis, and drawdown.
+    
+    Parameters:
+        log_returns (np.ndarray): 2D array where each row is an asset's log returns.
+        r_min (float): Minimum acceptable return.
+    
+    Returns:
+        np.ndarray: The BetaSharpe metric for each asset.
+    """
+    n_assets, n_periods = log_returns.shape
+    decay = np.exp(-np.arange(n_periods, dtype=log_returns.dtype) / (n_periods / 2))
+    wlr = (log_returns - r_min) * decay
+    mean_wlr = np.mean(wlr, axis=1)
+    
+    rolling_windows = np.lib.stride_tricks.sliding_window_view(wlr, window_shape=n_periods // 4, axis=1)
+    win_std = np.mean(np.std(rolling_windows, axis=2, ddof=0), axis=1)
+    
+    res = wlr - mean_wlr[:, None]
+    skew_val = np.clip(np.mean(res**3, axis=1) / (win_std**3), -1, 1)
+    kurt = np.minimum(np.mean(res**4, axis=1) / (win_std**4), 6) - 3
+    
+    cumsum = np.cumsum(wlr, axis=1)
+    dd = np.min(cumsum - np.max(cumsum, axis=1, keepdims=True), axis=1)
+    
+    adj_sharpe = mean_wlr * (1 - np.minimum(np.abs(kurt) / 12, 1))
+    adj_sharpe *= ((1 - 1 / (1 + np.abs(np.mean(dd)))) / win_std) * (1 + np.abs(skew_val) / 4)
+    adj_sharpe = np.mean(adj_sharpe) * np.where(mean_wlr > 0, 1.1, 0.9)
+    adj_sharpe /= (win_std + np.std(wlr[:, -n_periods // 4:], axis=1, ddof=0))
+    return adj_sharpe * (1 + ((skew_val**2 + kurt) / 8)) * (1 + np.mean(wlr, axis=1))
 
 def probabilistic_sharpe(raw_returns: np.ndarray, target: float = 0.0) -> np.ndarray:
     """
@@ -154,39 +186,6 @@ def probabilistic_sharpe(raw_returns: np.ndarray, target: float = 0.0) -> np.nda
         psr_values[i] = psr
         
     return psr_values
-
-def betasharpe_metric(log_returns: np.ndarray, r_min: float) -> np.ndarray:
-    """
-    Compute an alternative risk-adjusted metric (BetaSharpe) that incorporates 
-    decayed returns, rolling volatility, skewness, kurtosis, and drawdown.
-    
-    Parameters:
-        log_returns (np.ndarray): 2D array where each row is an asset's log returns.
-        r_min (float): Minimum acceptable return.
-    
-    Returns:
-        np.ndarray: The BetaSharpe metric for each asset.
-    """
-    n_assets, n_periods = log_returns.shape
-    decay = np.exp(-np.arange(n_periods, dtype=log_returns.dtype) / (n_periods / 2))
-    wlr = (log_returns - r_min) * decay
-    mean_wlr = np.mean(wlr, axis=1)
-    
-    rolling_windows = np.lib.stride_tricks.sliding_window_view(wlr, window_shape=n_periods // 4, axis=1)
-    win_std = np.mean(np.std(rolling_windows, axis=2, ddof=0), axis=1)
-    
-    res = wlr - mean_wlr[:, None]
-    skew_val = np.clip(np.mean(res**3, axis=1) / (win_std**3), -1, 1)
-    kurt = np.minimum(np.mean(res**4, axis=1) / (win_std**4), 6) - 3
-    
-    cumsum = np.cumsum(wlr, axis=1)
-    dd = np.min(cumsum - np.max(cumsum, axis=1, keepdims=True), axis=1)
-    
-    adj_sharpe = mean_wlr * (1 - np.minimum(np.abs(kurt) / 12, 1))
-    adj_sharpe *= ((1 - 1 / (1 + np.abs(np.mean(dd)))) / win_std) * (1 + np.abs(skew_val) / 4)
-    adj_sharpe = np.mean(adj_sharpe) * np.where(mean_wlr > 0, 1.1, 0.9)
-    adj_sharpe /= (win_std + np.std(wlr[:, -n_periods // 4:], axis=1, ddof=0))
-    return adj_sharpe * (1 + ((skew_val**2 + kurt) / 8)) * (1 + np.mean(wlr, axis=1))
 
 # ---------------------------
 # 3. Data Loading and Preparation
