@@ -478,9 +478,7 @@ def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> tor
     high_order_adjustment = (1 + (skewness.pow(2) + kurtosis) / 8).clamp(min=1e-8)
     temporal_decay_adjustment = (1 + weighted_log_returns.mean(dim=1)).clamp(min=1e-8)
 
-    entropy = torch.sum(weighted_log_returns.softmax(dim=1) * weighted_log_returns.softmax(dim=1).log(), dim=1).clamp(min=1e-8)
-
-    return combined_metric * high_order_adjustment * temporal_decay_adjustment * entropy
+    return combined_metric * high_order_adjustment * temporal_decay_adjustment
 """
 ]
 
