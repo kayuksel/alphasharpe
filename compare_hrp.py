@@ -298,7 +298,7 @@ plt.figure(figsize=(12, 7))
 plt.plot(selection_ratios, results['alpha_equal'], marker='o', label='AlphaSharpe + Equal Weights')
 plt.plot(selection_ratios, results['beta_equal'], marker='v', label='BetaSharpe + Equal Weights')
 plt.plot(selection_ratios, results['psr_equal'], marker='s', label='PSR + Equal Weights')
-plt.plot(selection_ratios, results['psr_hrp'], marker='d', label='PSR + HRP')
+plt.plot(selection_ratios, results['psr_hrp'], marker='d', label='PSR + Hierarchical Risk Parity')
 
 plt.xlabel('Selection Ratio (Fraction of Assets Selected)')
 plt.ylabel('Out-of-Sample Sharpe Ratio')
