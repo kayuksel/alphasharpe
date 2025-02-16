@@ -100,8 +100,8 @@ def ndcg(scores: torch.Tensor, labels: torch.Tensor, percent: float = 0.25, log_
 # Assuming calculate_psr and robust_sharpe are defined elsewhere
 def calculate_correlations(log_returns):
     cutoff_index = log_returns.size(1) // 5
-    train = log_returns[:, :cutoff_index]
-    test = log_returns[:, cutoff_index:]
+    train = log_returns[:, :-cutoff_index]
+    test = log_returns[:, -cutoff_index:]
 
     sharpe, psr = calculate_psr(train.T)
     sharpe_test = calculate_psr(test.T)[0]
@@ -517,14 +517,14 @@ cutoff_index = valid_data.size(1) // 5
 features = []
 for i, variant in enumerate(variants):  # Iterate through all variants
     exec(variant, globals())  # Execute each variant definition
-    features.append(robust_sharpe(valid_data[:, :cutoff_index]).numpy())  # Extract features using the robust_sharpe function
+    features.append(robust_sharpe(valid_data[:, :-cutoff_index]).numpy())  # Extract features using the robust_sharpe function
 
 # Combine features into a DataFrame
 features_df = pd.DataFrame(features).T  # Shape: (n_assets, n_variants)
 features_df.columns = [f"Variant_{i+1}" for i in range(len(variants))]
 
 # Step 2: Calculate Sharpe Ratios for the Test Period
-test_data = valid_data[:, cutoff_index:]
+test_data = valid_data[:, -cutoff_index:]
 sharpe_test = calculate_psr(test_data.T)[0].numpy()  # Sharpe ratios for the test period
 
 # Step 3: Define Groups
