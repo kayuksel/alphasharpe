@@ -456,19 +456,17 @@ def robust_sharpe(log_returns: torch.Tensor) -> torch.Tensor:
     # Apply exponential decay to weight recent returns more
     decay = torch.exp(-torch.arange(n_periods, dtype=log_returns.dtype, device=log_returns.device) / (n_periods / 2))
     wlr = log_returns * decay
-
-    # Compute mean returns once
     mean_wlr = wlr.mean(dim=1)
 
     # Rolling std over windows
-    win_std = wlr.unfold(1, n_periods // 4, 1).std(dim=2, unbiased=False).mean(dim=1) + 1e-8
+    win_std = wlr.unfold(1, n_periods // 4, 1).std(dim=2, unbiased=False).mean(dim=1)
 
     # Residuals for higher moments
     res = wlr - mean_wlr[:, None]
     skew = (res.pow(3).mean(dim=1) / win_std.pow(3)).clamp(-1, 1)
     kurt = (res.pow(4).mean(dim=1) / win_std.pow(4)).clamp(max=6) - 3
 
-    # Drawdown penalty (compute cumulative returns once)
+    # Compute drawdown penalty
     cumsum = wlr.cumsum(dim=1)
     dd = (cumsum - cumsum.max(dim=1, keepdim=True)[0]).min(dim=1)[0]
 
@@ -477,7 +475,8 @@ def robust_sharpe(log_returns: torch.Tensor) -> torch.Tensor:
     adj_sharpe *= (1 - 1 / (1 + dd.mean().abs())) / win_std * (1 + skew.abs() / 4)
     adj_sharpe = (adj_sharpe.mean() * torch.where(mean_wlr > 0, 1.1, 0.9)) 
     adj_sharpe /= (win_std + wlr[:, -n_periods // 4:].std(dim=1, unbiased=False))
-    return adj_sharpe * (1 + (skew.pow(2) + kurt) / 8)
+    return adj_sharpe * (1 + (skew.pow(2) + kurt) / 8) * (1 + wlr.mean(dim=1))
+
 """
 ]
 
