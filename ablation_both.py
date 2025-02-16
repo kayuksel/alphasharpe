@@ -80,9 +80,8 @@ def compute_portfolio_returns(selection_indices, optimization_method, test_data)
 # Compute Sharpe Ratios for all combinations
 sharpe_results = {
     "Sharpe Selection → Equal Weight Portfolio": compute_portfolio_returns(top_indices_sharpe, "equal_weight", test),
-    "AlphaSharpe Selection → Equal Weight Portfolio": compute_portfolio_returns(top_indices_alphasharpe, "equal_weight", test),
     "Sharpe Selection → AlphaSharpe Portfolio": compute_portfolio_returns(top_indices_sharpe, "alphasharpe", test),
-    "AlphaSharpe Selection → AlphaSharpe Portfolio": compute_portfolio_returns(top_indices_alphasharpe, "alphasharpe", test)
+    "AlphaSharpe Selection → Equal Weight Portfolio": compute_portfolio_returns(top_indices_alphasharpe, "equal_weight", test)
 }
 
 # Print results
