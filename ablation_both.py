@@ -55,8 +55,8 @@ valid_data = valid_data.to(device)
 
 # Train-test split
 cutoff_index = valid_data.size(1) // 5
-train = valid_data[:, :cutoff_index]
-test = valid_data[:, cutoff_index:]
+train = valid_data[:, :-cutoff_index]
+test = valid_data[:, -cutoff_index:]
 
 # Select top 25% based on AlphaSharpe and Sharpe Ratio
 top_indices_alphasharpe = torch.argsort(alphasharpe_metric(train), descending=True)[:train.shape[0] // 4]
