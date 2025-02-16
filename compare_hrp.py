@@ -196,9 +196,27 @@ results = {
     'psr_hrp': []
 }
 
-def calc_sharpe(returns):
-    """Helper function to compute Sharpe ratio (risk-free rate assumed 0)."""
-    return np.mean(returns) / (np.std(returns, ddof=1) + 1e-8)
+def calc_sharpe(log_returns, periods_per_year=252):
+    """
+    Compute the annualized Sharpe ratio for log returns (risk-free rate assumed 0).
+    
+    Parameters:
+        log_returns (np.ndarray): Array of log returns.
+        periods_per_year (int): Number of periods per year (default is 252 for daily data).
+    
+    Returns:
+        float: The annualized Sharpe ratio based on log returns.
+        
+    Note:
+        This function computes the Sharpe ratio using the mean and standard deviation of 
+        log returns. For small return values, this is generally acceptable, but be aware 
+        that log returns are not directly comparable to arithmetic returns.
+    """
+    mean_log_return = np.mean(log_returns)
+    std_log_return = np.std(log_returns, ddof=1)
+    # Annualize by multiplying the ratio by the square root of the number of periods per year.
+    sharpe_ratio_annualized = (mean_log_return / (std_log_return + 1e-8)) * np.sqrt(periods_per_year)
+    return sharpe_ratio_annualized
 
 # Loop over selection ratios to simulate portfolio performance
 for ratio in selection_ratios:
