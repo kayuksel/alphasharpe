@@ -156,8 +156,8 @@ valid_data = torch.from_numpy(valid_data).float().cuda()
 
 # Split data into training and testing
 cutoff_index = valid_data.size(1) // 5
-train = valid_data[:, :cutoff_index]
-test = valid_data[:, cutoff_index:]
+train = valid_data[:, :-cutoff_index]
+test = valid_data[:, -cutoff_index:]
 
 # Run the enhanced comparison function
 optimized_results_with_improvement = compare_optimization_methods_with_improvement(train, test, function_definitions)
