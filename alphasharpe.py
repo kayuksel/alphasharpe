@@ -464,21 +464,16 @@ def robust_sharpe(log_returns: torch.Tensor, risk_free_rate: float = 0.0) -> tor
     skewness = (residuals.pow(3).mean(dim=1) / rolling_std_dev.pow(3)).clamp(min=-1.0, max=1.0)
     kurtosis = (residuals.pow(4).mean(dim=1) / rolling_std_dev.pow(4)).clamp(max=6.0) - 3
 
-    tail_adjusted_excess_return = excess_return * (1 - (kurtosis.abs() / 12).clamp(max=1.0))
-
     drawdown = (weighted_log_returns.cumsum(dim=1) - weighted_log_returns.cumsum(dim=1).max(dim=1, keepdim=True)[0]).min(dim=1)[0]
     drawdown_penalty = (1 / (1 + drawdown.mean().abs())).clamp(max=1.0)
 
-    adjusted_sharpe = tail_adjusted_excess_return * (1 - drawdown_penalty) / (rolling_std_dev * (1 + skewness.abs() / 4).clamp(min=1e-8))
+    adjusted_sharpe = excess_return * (1 - (kurtosis.abs() / 12).clamp(max=1.0)) * (1 - drawdown_penalty) / (rolling_std_dev * (1 + skewness.abs() / 4).clamp(min=1e-8))
 
     volatility_forecast = weighted_log_returns[:, -n_periods // 4:].std(dim=1, unbiased=False).clamp(min=1e-8)
 
     combined_metric = (adjusted_sharpe.mean() * torch.where(excess_return > 0, 1.1, 0.9)) / (rolling_std_dev + volatility_forecast)
 
-    high_order_adjustment = (1 + (skewness.pow(2) + kurtosis) / 8).clamp(min=1e-8)
-    temporal_decay_adjustment = (1 + weighted_log_returns.mean(dim=1)).clamp(min=1e-8)
-
-    return combined_metric * high_order_adjustment * temporal_decay_adjustment
+    return combined_metric * (1 + (skewness.pow(2) + kurtosis) / 8).clamp(min=1e-8)
 """
 ]
 
