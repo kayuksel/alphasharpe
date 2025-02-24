@@ -152,6 +152,91 @@ def betasharpe_metric(log_returns: np.ndarray, r_min: float) -> np.ndarray:
     adj_sharpe /= (win_std + np.std(wlr[:, -n_periods // 4:], axis=1, ddof=0))
     return adj_sharpe * (1 + ((skew_val**2 + kurt) / 8)) * (1 + np.mean(wlr, axis=1))
 
+def alphacalmar_metric(log_returns, r_min=0.0):
+    # Replace NaNs with zero
+    log_returns = np.nan_to_num(log_returns)
+    n = log_returns.shape[1]
+
+    # Cumulative returns and running max
+    cumulative_returns = np.exp(np.cumsum(log_returns, axis=1))
+    running_max = np.maximum.accumulate(cumulative_returns, axis=1)
+    drawdowns = (cumulative_returns - running_max) / running_max
+    max_drawdown = np.abs(np.min(drawdowns, axis=1)) + 1e-8
+
+    # Compute trimming weights using quantiles along each row
+    lower = np.quantile(log_returns, 0.25, axis=1, keepdims=True)
+    upper = np.quantile(log_returns, 0.75, axis=1, keepdims=True)
+    trimming_weight = np.clip((log_returns - lower) / (upper - lower + 1e-8), 0.0, 1.0)
+    trimmed_log_returns = log_returns * trimming_weight
+
+    # Time decay weights
+    time_decay_weights = np.exp(np.linspace(-1.0, 0.0, n))[np.newaxis, :]
+    time_decay_weights /= (np.sum(time_decay_weights, axis=1, keepdims=True) + 1e-8)
+
+    weighted_log_returns = trimmed_log_returns * time_decay_weights
+    time_decayed_mean = np.sum(weighted_log_returns, axis=1) / (np.sum(time_decay_weights, axis=1) + 1e-8)
+
+    # Downside returns and risk measures
+    downside_returns = np.where(log_returns < 0, log_returns, 0)
+    var95 = -np.quantile(downside_returns, 0.95, axis=1)
+    condition = (downside_returns < var95[:, np.newaxis])
+    cvar = -np.sum(downside_returns * condition, axis=1) / (np.sum(condition, axis=1) + 1e-8)
+    es = np.sum(condition.astype(float) * np.abs(downside_returns), axis=1) / (np.sum(condition, axis=1) + 1e-8)
+    downside_std = np.sqrt(np.mean(downside_returns**2, axis=1) + 1e-8)
+    robust_std = np.sqrt(np.var(downside_returns, axis=1) + 1e-8)
+
+    # Risk measure: norm of a 5-dimensional vector per batch
+    risk_components = np.stack([np.abs(var95), np.abs(cvar), max_drawdown, downside_std, es], axis=1)
+    risk_measure = np.linalg.norm(risk_components, axis=1) + 1e-8
+
+    # Geometric mean and centered returns for skewness and kurtosis
+    geometric_mean_return = np.exp(np.mean(trimmed_log_returns, axis=1)) - 1
+    centered_returns = trimmed_log_returns - geometric_mean_return[:, np.newaxis]
+    skewness = np.mean(centered_returns**3, axis=1) / (downside_std**3 + 1e-8)
+    kurtosis = np.clip(np.mean(centered_returns**4, axis=1) / (downside_std**4 + 1e-8) - 3, -3, 3)
+
+    # Momentum and momentum lag features
+    momentum = np.clip(log_returns[:, -1] - log_returns[:, -min(5, n)], 0, None)
+    momentum_lag = np.concatenate([
+        momentum[:, np.newaxis],
+        np.mean(log_returns[:, -min(10, n):], axis=1, keepdims=True)
+    ], axis=1)
+
+    volatility = robust_std + 1e-8
+
+    # Entropy via softmax (applied row-wise)
+    exp_lr = np.exp(log_returns - np.max(log_returns, axis=1, keepdims=True))
+    softmax_lr = exp_lr / (np.sum(exp_lr, axis=1, keepdims=True) + 1e-8)
+    entropy = -np.sum(softmax_lr * np.log(np.clip(softmax_lr, 1e-8, None)), axis=1)
+
+    realized_vol = np.std(log_returns, axis=1) + 1e-8
+
+    # Construct feature matrix by concatenating along axis=1
+    features = np.concatenate([
+        trimmed_log_returns,
+        skewness[:, np.newaxis],
+        kurtosis[:, np.newaxis],
+        momentum_lag,
+        entropy[:, np.newaxis],
+        realized_vol[:, np.newaxis]
+    ], axis=1)
+
+    # Perform singular value decomposition (SVD)
+    u, s, vh = np.linalg.svd(features, full_matrices=False)
+    pca = u[:, :min(features.shape[1], u.shape[1])]
+
+    # Compute adjusted Calmar ratio
+    adjusted_calmar = time_decayed_mean * (1 + skewness - kurtosis) / risk_measure
+    adjusted_calmar += (1 + momentum / (volatility + 1e-8)) + entropy
+
+    adaptive_risk_aversion = (np.mean(drawdowns, axis=1) + 1e-8) / (volatility + 1e-8)
+    uncertainty = np.var(features, axis=1) / (np.mean(features, axis=1) + 1e-8)
+
+    final_score = (adjusted_calmar * adaptive_risk_aversion) + np.mean(pca, axis=1) - uncertainty
+
+    return final_score
+
+
 def probabilistic_sharpe(raw_returns: np.ndarray, target: float = 0.0) -> np.ndarray:
     """
     Compute the Probabilistic Sharpe Ratio (PSR) for each asset.
@@ -223,14 +308,18 @@ ranking_psr = np.argsort(psr_scores)[::-1]  # descending order (higher probabili
 beta_scores = betasharpe_metric(train, r_min=0.0)
 ranking_beta = np.argsort(beta_scores)[::-1]  # descending order
 
+# (d) AlphaCalmar ranking
+calmar_scores = alphacalmar_metric(train, r_min=0.0)
+ranking_calmar = np.argsort(calmar_scores)[::-1]  # descending order
+
+
 # Containers for out-of-sample Sharpe ratios for each ranking & weighting method
 results = {
     'alpha_equal': [],
-    'alpha_hrp': [],
     'psr_equal': [],
     'psr_hrp': [],
     'beta_equal': [],
-    'beta_hrp': []
+    'calmar_equal': []
 }
 
 def calc_sharpe(log_returns, periods_per_year=252):
@@ -248,6 +337,7 @@ def calc_sharpe(log_returns, periods_per_year=252):
     std_log_return = np.std(log_returns, ddof=1)
     sharpe_ratio_annualized = (mean_log_return / (std_log_return + 1e-8)) * np.sqrt(periods_per_year)
     return sharpe_ratio_annualized
+
 
 # Loop over selection ratios to simulate portfolio performance
 for ratio in selection_ratios:
@@ -283,17 +373,29 @@ for ratio in selection_ratios:
     # Equal weights for BetaSharpe selection
     eq_weights_beta = np.ones(n_select) / n_select
     eq_returns_beta = eq_weights_beta.dot(test_beta)
+
+
+    # --- AlphaCalmar-based Portfolio Selection ---
+    selected_calmar = ranking_calmar[:n_select]
+    train_calmar = train[selected_calmar]
+    test_calmar = test[selected_calmar]
+    
+    # Equal weights for AlphaCalmar selection
+    eq_weights_calmar = np.ones(n_select) / n_select
+    eq_returns_calmar = eq_weights_calmar.dot(test_calmar)
     
     # Compute and store out-of-sample Sharpe ratios for each method
     results['alpha_equal'].append(calc_sharpe(eq_returns_alpha))
     results['psr_equal'].append(calc_sharpe(eq_returns_psr))
     results['psr_hrp'].append(calc_sharpe(hrp_returns_psr))
     results['beta_equal'].append(calc_sharpe(eq_returns_beta))
+    results['calmar_equal'].append(calc_sharpe(eq_returns_calmar))
 
 # ---------------------------
 # 5. Visualization
 # ---------------------------
 plt.figure(figsize=(12, 7))
+plt.plot(selection_ratios, results['calmar_equal'], marker='o', label='AlphaCalmar + Equal Weights')
 plt.plot(selection_ratios, results['alpha_equal'], marker='o', label='AlphaSharpe + Equal Weights')
 plt.plot(selection_ratios, results['beta_equal'], marker='v', label='BetaSharpe + Equal Weights')
 plt.plot(selection_ratios, results['psr_equal'], marker='s', label='PSR + Equal Weights (1/N)')
