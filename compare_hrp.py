@@ -152,10 +152,9 @@ def betasharpe_metric(log_returns: np.ndarray, r_min: float) -> np.ndarray:
     adj_sharpe /= (win_std + np.std(wlr[:, -n_periods // 4:], axis=1, ddof=0))
     return adj_sharpe * (1 + ((skew_val**2 + kurt) / 8)) * (1 + np.mean(wlr, axis=1))
 
-def alphacalmar_metric(log_returns, r_min=0.0):
-    # Replace NaNs with zero
-    log_returns = np.nan_to_num(log_returns)
+def alphacalmar_metric(log_returns, r_min: float):
     n = log_returns.shape[1]
+    log_returns = log_returns - r_min
 
     # Cumulative returns and running max
     cumulative_returns = np.exp(np.cumsum(log_returns, axis=1))
@@ -183,7 +182,7 @@ def alphacalmar_metric(log_returns, r_min=0.0):
     cvar = -np.sum(downside_returns * condition, axis=1) / (np.sum(condition, axis=1) + 1e-8)
     es = np.sum(condition.astype(float) * np.abs(downside_returns), axis=1) / (np.sum(condition, axis=1) + 1e-8)
     downside_std = np.sqrt(np.mean(downside_returns**2, axis=1) + 1e-8)
-    robust_std = np.sqrt(np.var(downside_returns, axis=1) + 1e-8)
+    volatility = np.sqrt(np.var(downside_returns, axis=1) + 1e-8)
 
     # Risk measure: norm of a 5-dimensional vector per batch
     risk_components = np.stack([np.abs(var95), np.abs(cvar), max_drawdown, downside_std, es], axis=1)
@@ -201,8 +200,6 @@ def alphacalmar_metric(log_returns, r_min=0.0):
         momentum[:, np.newaxis],
         np.mean(log_returns[:, -min(10, n):], axis=1, keepdims=True)
     ], axis=1)
-
-    volatility = robust_std + 1e-8
 
     # Entropy via softmax (applied row-wise)
     exp_lr = np.exp(log_returns - np.max(log_returns, axis=1, keepdims=True))
@@ -232,9 +229,7 @@ def alphacalmar_metric(log_returns, r_min=0.0):
     adaptive_risk_aversion = (np.mean(drawdowns, axis=1) + 1e-8) / (volatility + 1e-8)
     uncertainty = np.var(features, axis=1) / (np.mean(features, axis=1) + 1e-8)
 
-    final_score = (adjusted_calmar * adaptive_risk_aversion) + np.mean(pca, axis=1) - uncertainty
-
-    return final_score
+    return (adjusted_calmar * adaptive_risk_aversion) + np.mean(pca, axis=1) - uncertainty
 
 
 def probabilistic_sharpe(raw_returns: np.ndarray, target: float = 0.0) -> np.ndarray:
