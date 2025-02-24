@@ -293,7 +293,7 @@ test = data[:, -cutoff_index:]
 # ---------------------------
 n_assets = train.shape[0]
 # Define selection ratios (from 20% up to 100% of assets)
-selection_ratios = np.linspace(0.2, 1.0, 20)
+selection_ratios = np.linspace(0.2, 0.6, 20)
 
 # Compute ranking scores for each method on training data:
 # (a) AlphaSharpe ranking
@@ -313,98 +313,168 @@ calmar_scores = alphacalmar_metric(train, r_min=0.0)
 ranking_calmar = np.argsort(calmar_scores)[::-1]  # descending order
 
 
-# Containers for out-of-sample Sharpe ratios for each ranking & weighting method
-results = {
+# ---------------------------
+# 5. Define Containers for Metrics
+# ---------------------------
+results_sharpe = {
     'alpha_equal': [],
     'psr_equal': [],
     'psr_hrp': [],
     'beta_equal': [],
-    'calmar_equal': []
+    'calmar_equal': [],
+    'calmar_hrp': []
 }
 
+results_mean = {
+    'alpha_equal': [],
+    'psr_equal': [],
+    'psr_hrp': [],
+    'beta_equal': [],
+    'calmar_equal': [],
+    'calmar_hrp': []
+}
+
+# New container for Calmar ratios
+results_calmar = {
+    'alpha_equal': [],
+    'psr_equal': [],
+    'psr_hrp': [],
+    'beta_equal': [],
+    'calmar_equal': [],
+    'calmar_hrp': []
+}
+
+# ---------------------------
+# 6. Helper Functions for Performance Metrics
+# ---------------------------
 def calc_sharpe(log_returns, periods_per_year=252):
     """
     Compute the annualized Sharpe ratio for log returns (risk-free rate assumed 0).
-    
-    Parameters:
-        log_returns (np.ndarray): Array of log returns.
-        periods_per_year (int): Number of periods per year (default is 252 for daily data).
-    
-    Returns:
-        float: The annualized Sharpe ratio based on log returns.
     """
     mean_log_return = np.mean(log_returns)
     std_log_return = np.std(log_returns, ddof=1)
     sharpe_ratio_annualized = (mean_log_return / (std_log_return + 1e-8)) * np.sqrt(periods_per_year)
     return sharpe_ratio_annualized
 
+def calc_calmar(log_returns, periods_per_year=252):
+    """
+    Compute the annualized Calmar ratio for log returns.
+    
+    The Calmar ratio is defined as the annualized return divided by the maximum drawdown.
+    """
+    cum_returns = np.exp(np.cumsum(log_returns))  # cumulative wealth
+    running_max = np.maximum.accumulate(cum_returns)
+    drawdowns = (running_max - cum_returns) / (running_max + 1e-8)
+    max_dd = np.max(drawdowns)
+    mean_log_return = np.mean(log_returns)
+    annualized_return = mean_log_return * periods_per_year
+    return annualized_return / (max_dd + 1e-8)
 
-# Loop over selection ratios to simulate portfolio performance
+# ---------------------------
+# 7. Loop over Selection Ratios to Simulate Portfolio Performance
+# ---------------------------
 for ratio in selection_ratios:
     n_select = int(np.ceil(ratio * n_assets))
     
-    # --- AlphaSharpe-based Portfolio Selection ---
+    # --- AlphaSharpe-based Portfolio Selection (Equal Weights) ---
     selected_alpha = ranking_alpha[:n_select]
     train_alpha = train[selected_alpha]
     test_alpha = test[selected_alpha]
-    
-    # Equal weights for AlphaSharpe selection
     eq_weights_alpha = np.ones(n_select) / n_select
     eq_returns_alpha = eq_weights_alpha.dot(test_alpha)
     
-    # --- PSR-based Portfolio Selection ---
+    # --- PSR-based Portfolio Selection (Equal Weights & HRP) ---
     selected_psr = ranking_psr[:n_select]
     train_psr = train[selected_psr]
     test_psr = test[selected_psr]
-    
-    # Equal weights for PSR selection
     eq_weights_psr = np.ones(n_select) / n_select
     eq_returns_psr = eq_weights_psr.dot(test_psr)
     
-    # HRP weights for PSR selection
     hrp_weights_psr = hrp_portfolio(train_psr)
     hrp_returns_psr = hrp_weights_psr.dot(test_psr)
     
-    # --- BetaSharpe-based Portfolio Selection ---
+    # --- BetaSharpe-based Portfolio Selection (Equal Weights) ---
     selected_beta = ranking_beta[:n_select]
     train_beta = train[selected_beta]
     test_beta = test[selected_beta]
-    
-    # Equal weights for BetaSharpe selection
     eq_weights_beta = np.ones(n_select) / n_select
     eq_returns_beta = eq_weights_beta.dot(test_beta)
-
-
-    # --- AlphaCalmar-based Portfolio Selection ---
+    
+    # --- AlphaCalmar-based Portfolio Selection (Equal Weights & HRP) ---
     selected_calmar = ranking_calmar[:n_select]
     train_calmar = train[selected_calmar]
     test_calmar = test[selected_calmar]
-    
-    # Equal weights for AlphaCalmar selection
     eq_weights_calmar = np.ones(n_select) / n_select
     eq_returns_calmar = eq_weights_calmar.dot(test_calmar)
     
+    hrp_weights_calmar = hrp_portfolio(train_calmar)
+    hrp_returns_calmar = hrp_weights_calmar.dot(test_calmar)
+    
     # Compute and store out-of-sample Sharpe ratios for each method
-    results['alpha_equal'].append(calc_sharpe(eq_returns_alpha))
-    results['psr_equal'].append(calc_sharpe(eq_returns_psr))
-    results['psr_hrp'].append(calc_sharpe(hrp_returns_psr))
-    results['beta_equal'].append(calc_sharpe(eq_returns_beta))
-    results['calmar_equal'].append(calc_sharpe(eq_returns_calmar))
+    results_sharpe['alpha_equal'].append(calc_sharpe(eq_returns_alpha))
+    results_sharpe['psr_equal'].append(calc_sharpe(eq_returns_psr))
+    results_sharpe['psr_hrp'].append(calc_sharpe(hrp_returns_psr))
+    results_sharpe['beta_equal'].append(calc_sharpe(eq_returns_beta))
+    results_sharpe['calmar_equal'].append(calc_sharpe(eq_returns_calmar))
+    results_sharpe['calmar_hrp'].append(calc_sharpe(hrp_returns_calmar))
+    
+    # Compute and store mean log returns for each method
+    results_mean['alpha_equal'].append(np.mean(eq_returns_alpha))
+    results_mean['psr_equal'].append(np.mean(eq_returns_psr))
+    results_mean['psr_hrp'].append(np.mean(hrp_returns_psr))
+    results_mean['beta_equal'].append(np.mean(eq_returns_beta))
+    results_mean['calmar_equal'].append(np.mean(eq_returns_calmar))
+    results_mean['calmar_hrp'].append(np.mean(hrp_returns_calmar))
+    
+    # Compute and store annualized Calmar ratios for each method
+    results_calmar['alpha_equal'].append(calc_calmar(eq_returns_alpha))
+    results_calmar['psr_equal'].append(calc_calmar(eq_returns_psr))
+    results_calmar['psr_hrp'].append(calc_calmar(hrp_returns_psr))
+    results_calmar['beta_equal'].append(calc_calmar(eq_returns_beta))
+    results_calmar['calmar_equal'].append(calc_calmar(eq_returns_calmar))
+    results_calmar['calmar_hrp'].append(calc_calmar(hrp_returns_calmar))
 
 # ---------------------------
-# 5. Visualization
+# 8. Visualization: Three-Panel Plot for Sharpe, Mean Return, and Calmar Ratios
 # ---------------------------
-plt.figure(figsize=(12, 7))
-plt.plot(selection_ratios, results['calmar_equal'], marker='o', label='AlphaCalmar + Equal Weights')
-plt.plot(selection_ratios, results['alpha_equal'], marker='o', label='AlphaSharpe + Equal Weights')
-plt.plot(selection_ratios, results['beta_equal'], marker='v', label='BetaSharpe + Equal Weights')
-plt.plot(selection_ratios, results['psr_equal'], marker='s', label='PSR + Equal Weights (1/N)')
-plt.plot(selection_ratios, results['psr_hrp'], marker='d', label='PSR + Hierarchical Risk Parity')
+fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1, figsize=(12, 18), sharex=True)
 
-plt.xlabel('Selection Ratio (Fraction of Assets Selected)')
-plt.ylabel('Out-of-Sample Sharpe Ratio')
-plt.title('Out-of-Sample Performance: Ranking vs. Weighting Schemes')
-plt.legend()
-plt.grid(True)
+# Panel 1: Annualized Sharpe Ratios
+ax1.plot(selection_ratios, results_sharpe['calmar_equal'], marker='o', label='AlphaCalmar + Equal Weights')
+ax1.plot(selection_ratios, results_sharpe['alpha_equal'], marker='o', label='AlphaSharpe + Equal Weights')
+ax1.plot(selection_ratios, results_sharpe['beta_equal'], marker='v', label='BetaSharpe + Equal Weights')
+ax1.plot(selection_ratios, results_sharpe['psr_equal'], marker='s', label='PSR + Equal Weights (1/N)')
+ax1.plot(selection_ratios, results_sharpe['psr_hrp'], marker='d', label='PSR + Hierarchical Risk Parity')
+ax1.plot(selection_ratios, results_sharpe['calmar_hrp'], marker='^', label='AlphaCalmar + HRP')
+ax1.set_ylabel('Annualized Sharpe Ratio')
+ax1.set_title('Out-of-Sample Performance: Sharpe Ratios')
+ax1.legend()
+ax1.grid(True)
+
+# Panel 2: Annualized Calmar Ratios
+ax2.plot(selection_ratios, results_calmar['calmar_equal'], marker='o', label='AlphaCalmar + Equal Weights')
+ax2.plot(selection_ratios, results_calmar['alpha_equal'], marker='o', label='AlphaSharpe + Equal Weights')
+ax2.plot(selection_ratios, results_calmar['beta_equal'], marker='v', label='BetaSharpe + Equal Weights')
+ax2.plot(selection_ratios, results_calmar['psr_equal'], marker='s', label='PSR + Equal Weights (1/N)')
+ax2.plot(selection_ratios, results_calmar['psr_hrp'], marker='d', label='PSR + Hierarchical Risk Parity')
+ax2.plot(selection_ratios, results_calmar['calmar_hrp'], marker='^', label='AlphaCalmar + HRP')
+ax2.set_xlabel('Selection Ratio (Fraction of Assets Selected)')
+ax2.set_ylabel('Annualized Calmar Ratio')
+ax2.set_title('Out-of-Sample Performance: Calmar Ratios')
+ax2.legend()
+ax2.grid(True)
+
+# Panel 3: Mean Log Returns
+ax3.plot(selection_ratios, results_mean['calmar_equal'], marker='o', label='AlphaCalmar + Equal Weights')
+ax3.plot(selection_ratios, results_mean['alpha_equal'], marker='o', label='AlphaSharpe + Equal Weights')
+ax3.plot(selection_ratios, results_mean['beta_equal'], marker='v', label='BetaSharpe + Equal Weights')
+ax3.plot(selection_ratios, results_mean['psr_equal'], marker='s', label='PSR + Equal Weights (1/N)')
+#ax3.plot(selection_ratios, results_mean['psr_hrp'], marker='d', label='PSR + Hierarchical Risk Parity')
+#ax3.plot(selection_ratios, results_mean['calmar_hrp'], marker='^', label='AlphaCalmar + HRP')
+ax3.set_ylabel('Mean Log Return')
+ax3.set_title('Out-of-Sample Performance: Mean Returns')
+ax3.legend()
+ax3.grid(True)
+
 plt.tight_layout()
 plt.show()
