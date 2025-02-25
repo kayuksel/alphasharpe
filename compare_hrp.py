@@ -153,10 +153,10 @@ def betasharpe_metric(log_returns: np.ndarray, r_min: float) -> np.ndarray:
     return adj_sharpe * (1 + ((skew_val**2 + kurt) / 8)) * (1 + np.mean(wlr, axis=1))
 
 def alphacalmar_metric(log_returns: np.ndarray, r_min: float = 0.0) -> np.ndarray:
-    # Adjust returns and replace NaNs
+    # Remove NaNs and subtract risk free rate
     log_returns = np.nan_to_num(log_returns - r_min)
     n = log_returns.shape[1]
-
+    
     # Cumulative returns and drawdowns
     cumulative_returns = np.exp(np.cumsum(log_returns, axis=1))
     running_max = np.maximum.accumulate(cumulative_returns, axis=1)
@@ -164,131 +164,130 @@ def alphacalmar_metric(log_returns: np.ndarray, r_min: float = 0.0) -> np.ndarra
     max_drawdown = np.abs(np.min(drawdowns, axis=1)) + 1e-8
 
     # Quantile-based trimming
-    lower = np.quantile(log_returns, 0.25, axis=1, keepdims=True)
-    upper = np.quantile(log_returns, 0.75, axis=1, keepdims=True)
-    trimming_weight = np.clip((log_returns - lower) / (upper - lower + 1e-8), 0.0, 1.0)
+    q_lower, q_upper = np.quantile(log_returns, [0.1, 0.9], axis=1, keepdims=True)
+    trimming_weight = np.clip((log_returns - q_lower) / (q_upper - q_lower + 1e-8), 0.0, 1.0)
     trimmed_log_returns = log_returns * trimming_weight
 
-    # Time-decay weighted mean
-    time_decay_weights = np.exp(np.linspace(-1.0, 0.0, n))[np.newaxis, :]  # shape (1, n)
-    time_decayed_mean = (trimmed_log_returns * time_decay_weights).sum(axis=1) / (time_decay_weights.sum(axis=1) + 1e-8)
+    # Time decay weighting: using linspace to guarantee n elements
+    time_weights = np.exp(np.linspace(-1.0, 0.0, n, endpoint=False))[None, :]
+    time_decayed_mean = np.sum(trimmed_log_returns * time_weights, axis=1) / (np.sum(time_weights, axis=1) + 1e-8)
 
-    # Downside risk metrics
+    # Downside measures
     downside_returns = np.minimum(log_returns, 0)
     var95 = -np.quantile(downside_returns, 0.95, axis=1, keepdims=True)
-    indicator = (downside_returns < var95).astype(float)
-    cvar = -np.sum(downside_returns * indicator, axis=1) / (np.sum(indicator, axis=1) + 1e-8)
-    es = np.abs(np.mean(np.where(downside_returns < var95, downside_returns, 0.0), axis=1))
+    cvar = -np.mean(downside_returns * (downside_returns < var95).astype(float), axis=1) / (np.sum((downside_returns < var95).astype(float), axis=1) + 1e-8)
+    downside_std = np.sqrt(np.mean(np.square(downside_returns), axis=1) + 1e-8)
 
-    downside_std = np.sqrt(np.mean(downside_returns**2, axis=1) + 1e-8)
+    # GARCH-like volatility estimate
     mean_lr = np.mean(log_returns, axis=1, keepdims=True)
-    garch_variance = np.mean((log_returns - mean_lr)**2, axis=1) + 0.1 * (np.std(log_returns, axis=1, ddof=0) ** 2)
-    garch_volatility = np.sqrt(garch_variance)
+    garch_variance = np.mean(np.square(log_returns - mean_lr), axis=1) + 0.1 * np.square(np.std(log_returns, axis=1))
+    garch_volatility = np.sqrt(garch_variance + 1e-8)
 
-    # Composite risk measure (stack then compute L2 norm along axis=0)
+    # Combined risk measure (L2 norm of several risk metrics)
     risk_components = np.stack([
-        np.squeeze(var95, axis=1),  # shape (batch,)
-        cvar,                       # shape (batch,)
-        es,                         # shape (batch,)
-        max_drawdown,               # shape (batch,)
-        downside_std,               # shape (batch,)
-        garch_volatility            # shape (batch,)
+        var95.squeeze(), 
+        max_drawdown, 
+        downside_std, 
+        garch_volatility
     ], axis=0)
     risk_measure = np.linalg.norm(risk_components, axis=0) + 1e-8
 
-    # Geometric mean return and centered returns
+    # Geometric mean and skew/kurtosis calculations
     geometric_mean_return = np.exp(np.mean(trimmed_log_returns, axis=1)) - 1
-    centered_returns = trimmed_log_returns - geometric_mean_return[:, np.newaxis]
+    centered_returns = trimmed_log_returns - geometric_mean_return[:, None]
+    skewness = np.mean(np.power(centered_returns, 3), axis=1) / (np.power(downside_std, 3) + 1e-8)
+    kurtosis = np.clip((np.mean(np.power(centered_returns, 4), axis=1) / (np.power(downside_std, 4) + 1e-8) - 3), -3.0, 3.0)
 
-    # Skewness and kurtosis (excess, clipped)
-    skewness = np.mean(centered_returns**3, axis=1) / (downside_std**3 + 1e-8)
-    kurtosis = np.clip(np.mean(centered_returns**4, axis=1) / (downside_std**4 + 1e-8) - 3, -3.0, 3.0)
-
-    # Momentum and momentum lag (using last min(10, n) observations)
-    m = min(10, n)
-    momentum = np.maximum(log_returns[:, -1] - log_returns[:, -m], 0)
-    momentum_lag = np.concatenate([
-        momentum[:, None],
-        np.mean(log_returns[:, -m:], axis=1, keepdims=True)
-    ], axis=1)
-
-    # Windowed entropy over sliding windows
+    # Windowed entropy using a sliding window view
     window_size = min(5, n)
-    windowed = np.lib.stride_tricks.sliding_window_view(log_returns, window_shape=window_size, axis=1)
-    # Compute softmax along window dimension (axis=2)
-    max_window = np.max(windowed, axis=2, keepdims=True)
-    exp_window = np.exp(windowed - max_window)
-    softmax_window = exp_window / np.sum(exp_window, axis=2, keepdims=True)
-    windowed_entropy = -np.sum(softmax_window * np.log(np.clip(softmax_window, 1e-8, 1.0)), axis=2).mean(axis=1)
+    # Create sliding windows along the time axis (axis=1)
+    shape = (log_returns.shape[0], n - window_size + 1, window_size)
+    strides = log_returns.strides[:1] + (log_returns.strides[1], log_returns.strides[1])
+    windowed = np.lib.stride_tricks.as_strided(log_returns, shape=shape, strides=strides)
+    
+    def softmax(x, axis):
+        # subtract max for numerical stability
+        x_max = np.max(x, axis=axis, keepdims=True)
+        e_x = np.exp(x - x_max)
+        return e_x / np.sum(e_x, axis=axis, keepdims=True)
+    
+    windowed_sm = softmax(windowed, axis=2)
+    windowed_entropy = -np.sum(windowed_sm * np.log(np.clip(windowed_sm, 1e-8, 1.0)), axis=2).mean(axis=1)
     
     realized_vol = np.std(log_returns, axis=1, ddof=0) + 1e-8
 
     # Concatenate features
     features = np.concatenate([
-        trimmed_log_returns,                          # shape (batch, n)
-        skewness[:, None],                            # shape (batch, 1)
-        kurtosis[:, None],                            # shape (batch, 1)
-        momentum_lag,                                 # shape (batch, 2)
-        windowed_entropy[:, None],                    # shape (batch, 1)
-        realized_vol[:, None],                        # shape (batch, 1)
-        garch_volatility[:, None]                     # shape (batch, 1)
+        trimmed_log_returns,
+        skewness[:, None],
+        kurtosis[:, None],
+        windowed_entropy[:, None],
+        realized_vol[:, None],
+        garch_volatility[:, None]
     ], axis=1)
+    features_mean = np.mean(features, axis=1, keepdims=True)
+    features_std = np.std(features, axis=1, keepdims=True)
+    normalized_features = (features - features_mean) / (features_std + 1e-8)
+    
+    # PCA via SVD
+    u, s, vh = np.linalg.svd(normalized_features, full_matrices=False)
+    num_components = min(normalized_features.shape[1], u.shape[1])
+    features_pca = u[:, :num_components]
 
-    # PCA via SVD on features
-    u, s, vh = np.linalg.svd(features, full_matrices=False)
-    k = min(features.shape[1], u.shape[1])
-    features_pca = u[:, :k]
-
-    # Adaptive risk aversion and uncertainty adjustments
+    # Adaptive risk aversion and uncertainty
     adaptive_risk_aversion = (np.mean(drawdowns, axis=1) + 1e-8) / (downside_std + garch_volatility + 1e-8)
     uncertainty = np.var(features, axis=1) / (np.mean(features, axis=1) + 1e-8)
 
-    # Hurst exponent estimation
-    hurst_exponent = -np.log(np.std(log_returns, axis=1, ddof=0) / (np.mean(np.abs(log_returns), axis=1) + 1e-8))
+    # Hurst exponent estimate (negated ratio)
+    hurst_exponent = - (np.std(log_returns, axis=1) / (np.mean(np.abs(log_returns), axis=1) + 1e-8))
 
     # Tail excess risk
     tail_excess_risk = (max_drawdown * (downside_std + garch_volatility) * np.mean(np.abs(drawdowns), axis=1)) / (max_drawdown + downside_std + 1e-8)
 
-    # Final score calculation
-    final_score = ((time_decayed_mean * (1 + skewness - kurtosis)) / risk_measure) + (1 + momentum / (downside_std + garch_volatility + 1e-8))
+    # Final score: combine multiple components
+    # Calculate the incremental return term from recent log_returns differences
+    recent_diff = (log_returns[:, -1] - log_returns[:, -min(10, n)])
+    final_score = (time_decayed_mean * (1 + skewness - kurtosis) / risk_measure) \
+                  + (1 + np.clip(recent_diff, 0, None) / (downside_std + garch_volatility + 1e-8))
     final_score = final_score * adaptive_risk_aversion + np.mean(features_pca, axis=1) - uncertainty + hurst_exponent
-    diversification_ratio = np.std(trimmed_log_returns, axis=1, ddof=0) / (np.mean(trimmed_log_returns, axis=1) + 1e-8)
+
+    diversification_ratio = np.std(trimmed_log_returns, axis=1) / (np.mean(trimmed_log_returns, axis=1) + 1e-8)
     final_score += diversification_ratio
 
-    # Entropy over trimmed_log_returns using softmax
-    max_trim = np.max(trimmed_log_returns, axis=1, keepdims=True)
-    exp_trim = np.exp(trimmed_log_returns - max_trim)
-    softmax_trim = exp_trim / np.sum(exp_trim, axis=1, keepdims=True)
-    entropies = -np.sum(softmax_trim * np.log(np.clip(softmax_trim, 1e-8, 1.0)), axis=1)
+    # Entropy over trimmed log returns
+    trimmed_sm = softmax(trimmed_log_returns, axis=1)
+    entropies = -np.sum(trimmed_sm * np.log(np.clip(trimmed_sm, 1e-8, 1.0)), axis=1)
     final_score += entropies
 
     final_score -= tail_excess_risk
 
-    # Renyi entropy
-    renyi_entropy = np.log(np.mean(np.exp(0.5 * trimmed_log_returns), axis=1)) / (1.5 - 1 + 1e-8)
+    # Renyi entropy calculation
+    renyi_entropy = np.log(np.mean(np.exp(0.5 * trimmed_log_returns), axis=1) + 1e-8) / (0.5 - 1 + 1e-8)
     final_score += renyi_entropy
 
-    # Multi-resolution analysis via FFT
-    wavelet_coeffs = np.fft.fft(trimmed_log_returns, axis=1)
-    # Create a frequency mask: low frequencies if abs(index - n//2) < n//10
-    freq_indices = np.abs(np.arange(n, dtype=float) - n//2)
-    low_freq_mask = (freq_indices < (n // 10)).astype(float)
-    low_freq_component = np.abs(wavelet_coeffs) * low_freq_mask[np.newaxis, :]
-    # Softmax over low frequency component
-    max_low = np.max(low_freq_component, axis=1, keepdims=True)
-    exp_low = np.exp(low_freq_component - max_low)
-    softmax_low = exp_low / np.sum(exp_low, axis=1, keepdims=True)
-    multi_resolution_entropy = -np.sum(softmax_low * np.log(np.clip(softmax_low, 1e-8, 1.0)), axis=1)
+    # Multi-resolution entropy from low frequency component of FFT
+    fft_vals = np.fft.fft(trimmed_log_returns, axis=1)
+    low_freq_filter = (np.abs(np.arange(n).astype(float) - (n // 2)) < (n // 10)).astype(float)
+    low_freq_component = np.abs(fft_vals) * low_freq_filter
+    low_freq_sm = softmax(low_freq_component, axis=1)
+    multi_resolution_entropy = -np.sum(low_freq_sm * np.log(np.clip(low_freq_sm, 1e-8, 1.0)), axis=1)
     final_score += multi_resolution_entropy
 
-    # Total variation denoising step: subtract mean then add std of denoised returns
+    # Denoised returns and their volatility
     denoised_returns = log_returns - np.mean(log_returns, axis=1, keepdims=True)
-    final_score += np.std(denoised_returns, axis=1, ddof=0)
+    final_score += np.std(denoised_returns, axis=1)
+
+    final_score -= 0.05 * (downside_std + garch_volatility)
+
+    # Implicit volatility
+    implicit_volatility = np.mean(np.exp(np.std(log_returns, axis=1))) + 1e-8
+    final_score += implicit_volatility
+
+    # Hyperbolic geometric mean
+    hyperbolic_geom_mean = (np.mean(np.exp(trimmed_log_returns), axis=1) - 1 + 1e-8) * np.cosh(np.clip(np.mean(trimmed_log_returns, axis=1), 1e-8, None))
+    final_score += hyperbolic_geom_mean
 
     return final_score
-
-
-
 
 def probabilistic_sharpe(raw_returns: np.ndarray, target: float = 0.0) -> np.ndarray:
     """
