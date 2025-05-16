@@ -23,7 +23,7 @@ def alpha_sharpe(
 AlphaPortfolio: Discovery of Portfolio Allocation Methods Using LLMs
 
 ```python
-def optimize_portfolio(lr: torch.Tensor, eps = 1e-8):
+def alpha_portfolio(lr: torch.Tensor, eps = 1e-8):
     # Compute covariance matrix of log returns and add eps for numerical stability
     cov = lr.cov() + eps * torch.eye(len(lr), device=lr.device)
     # Compute risk-adjusted returns (RAR) via inverse covariance weighted mean returns
