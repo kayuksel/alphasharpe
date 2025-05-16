@@ -20,6 +20,7 @@ def alpha_sharpe(
     # Forecasted Volatility (V) calculation
     volatility = fv * log_returns[:, -log_returns.shape[-1] // window:].std(dim=-1, unbiased=False).sqrt()
     return mean_log_excess_return.exp() / ((std_log_returns.pow(2) + epsilon).sqrt() + downside + volatility)
+```
 
 AlphaPortfolio: Discovery of Portfolio Allocation Methods Using LLMs
 
@@ -32,3 +33,4 @@ def optimize_portfolio(lr: torch.Tensor, eps = 1e-8):
     w = enhanced.softmax(dim=0)
     w = w * ((w * (w + eps).log()).exp().mean()).clamp(min=0.0)
     return w / w.sum()
+```
