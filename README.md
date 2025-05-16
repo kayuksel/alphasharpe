@@ -4,8 +4,7 @@ AlphaSharpe: LLM-Driven "Discovery" of Robust Risk-Adjusted Metrics
 
 ```python
 def alpha_sharpe(
-    log_returns: torch.Tensor, risk_free: float = 0.0, eps: float = 1.5e-5, dr: float = 2.0, fv: float = 1.33, window: int = 3
-) -> torch.Tensor:
+    log_returns: torch.Tensor, risk_free: 0.0, eps: 1.5e-5, dr: 2.0, fv: 1.33, window: int = 3):
     log_returns = log_returns.unsqueeze(0) if log_returns.ndim == 1 else log_returns
     # Calculate mean log excess return (expected log excess return) and standard deviation of log returns
     mean_log_excess_return = log_returns.mean(dim=-1) - risk_free
