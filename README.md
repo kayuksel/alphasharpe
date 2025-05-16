@@ -30,12 +30,11 @@ def alpha_portfolio(lr: torch.Tensor, eps = 1e-8):
     rar = (torch.linalg.inv(cov) @ lr.mean(dim=1)).clamp(min=0.0)
     # Enhance RAR by scaling with (1 + std deviation of RAR)
     enhanced = rar * (1 + rar.std())
-    # Adjust enhanced returns by each asset’s volatility (sqrt of covariance diagonal) plus eps
+    # Adjust enhanced returns by each asset’s volatility (sqrt of covariance diagonal)
     enhanced /= (cov.diagonal() + eps).sqrt() + eps
     # Apply softmax to get initial portfolio weights (positive and sum to 1)
     w = enhanced.softmax(dim=0)
     # Compute entropy-based scaling factor and apply to weights
     w = w * ((w * (w + eps).log()).exp().mean()).clamp(min=0.0)
-    # Normalize final weights to ensure they sum to exactly 1
     return w / w.sum()
 ```
