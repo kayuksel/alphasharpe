@@ -21,3 +21,27 @@ def alpha_sharpe(
 ```
 
 AlphaPortfolio: Discovery of Portfolio Allocation Methods Using LLMs
+```python
+def train_loss(weights, log_returns, alpha=0.02, gamma=0.1, theta=0.0001, window_size=200):
+    weights = torch.softmax(weights, dim=0)
+    rets = log_returns.matmul(weights)
+    discounted_rets = gamma * rets
+    window_size = min(window_size, len(log_returns))
+    rets_rolled = discounted_rets.unsqueeze(1).unfold(0, window_size, 1)
+    lower_idx = int(theta * window_size)
+    (trimmed_rets, _) = torch.topk(rets_rolled, k=window_size - lower_idx, dim=2, largest=False)
+    trimmed_mean = torch.mean(trimmed_rets, dim=2)
+    portfolio_ret = trimmed_mean.mean()
+    lower_quartile = torch.quantile(rets_rolled, 0.25, dim=2, keepdim=True)
+    median_quartile = torch.quantile(rets_rolled, 0.5, dim=2, keepdim=True)
+    semi_std = (median_quartile - lower_quartile).mean()
+    cov_matrix = torch.cov(log_returns.T)
+    portfolio_variance = (weights @ cov_matrix @ weights).sum()
+    diversification_penalty = alpha * portfolio_variance
+    cvar_penalty = -rets_rolled.min(dim=2).values.mean()
+```
+    l_penalty = alpha * ((weights ** 2).mean() + torch.mean(torch.abs(weights)) * 0.1)
+    loss_components = [-portfolio_ret, semi_std, cvar_penalty, l_penalty, diversification_penalty]
+    loss_weights = torch.sigmoid(torch.abs(torch.stack(loss_components)))
+    loss_weights = loss_weights / loss_weights.sum()
+    return (torch.stack(loss_components) * loss_weights).sum()
