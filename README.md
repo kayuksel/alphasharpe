@@ -39,9 +39,9 @@ def train_loss(weights, log_returns, alpha=0.02, gamma=0.1, theta=0.0001, window
     portfolio_variance = (weights @ cov_matrix @ weights).sum()
     diversification_penalty = alpha * portfolio_variance
     cvar_penalty = -rets_rolled.min(dim=2).values.mean()
-```
     l_penalty = alpha * ((weights ** 2).mean() + torch.mean(torch.abs(weights)) * 0.1)
     loss_components = [-portfolio_ret, semi_std, cvar_penalty, l_penalty, diversification_penalty]
     loss_weights = torch.sigmoid(torch.abs(torch.stack(loss_components)))
     loss_weights = loss_weights / loss_weights.sum()
     return (torch.stack(loss_components) * loss_weights).sum()
+```
